@@ -117,6 +117,14 @@ releaseAll()
 IOReturn ItlIwm::
 enable(IONetworkInterface *netif)
 {
+#ifdef AIRPORT_WCL
+    if (!getMainWorkLoop()->inGate()) {
+        return getMainCommandGate()->runAction(
+            [](OSObject *, void *arg0, void *arg1, void *, void *) -> IOReturn {
+                return static_cast<ItlIwm *>(arg0)->enable(static_cast<IONetworkInterface *>(arg1));
+            }, this, netif);
+    }
+#endif
     XYLog("%s\n", __PRETTY_FUNCTION__);
     struct _ifnet *ifp = &com.sc_ic.ic_ac.ac_if;
     if (ifp->if_flags & IFF_UP) {
@@ -124,16 +132,40 @@ enable(IONetworkInterface *netif)
         return kIOReturnSuccess;
     }
     ifp->if_flags |= IFF_UP;
+#ifdef AIRPORT_WCL
+    int error = iwm_activate(&com, DVACT_RESUME);
+    if (!error)
+        error = iwm_activate(&com, DVACT_WAKEUP);
+    if (error) {
+        ifp->if_flags &= ~IFF_UP;
+        iwm_activate(&com, DVACT_QUIESCE);
+        IOLog("itlwm: IWM activation failed error=%d generation=%d\n", error, com.sc_generation);
+        return kIOReturnError;
+    }
+#else
     iwm_activate(&com, DVACT_RESUME);
     iwm_activate(&com, DVACT_WAKEUP);
+#endif
     return kIOReturnSuccess;
 }
 
 IOReturn ItlIwm::
 disable(IONetworkInterface *netif)
 {
+#ifdef AIRPORT_WCL
+    if (!getMainWorkLoop()->inGate()) {
+        return getMainCommandGate()->runAction(
+            [](OSObject *, void *arg0, void *arg1, void *, void *) -> IOReturn {
+                return static_cast<ItlIwm *>(arg0)->disable(static_cast<IONetworkInterface *>(arg1));
+            }, this, netif);
+    }
+#endif
     struct _ifnet *ifp = &com.sc_ic.ic_ac.ac_if;
+#ifdef AIRPORT_WCL
+    if (!(ifp->if_flags & (IFF_UP | IFF_RUNNING))) {
+#else
     if (!(ifp->if_flags & IFF_UP)) {
+#endif
         XYLog("%s already in diactivating state\n", __FUNCTION__);
         return kIOReturnSuccess;
     }

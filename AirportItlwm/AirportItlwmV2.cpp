@@ -544,9 +544,16 @@ IOReturn AirportItlwm::enable(IO80211SkywalkInterface *netif)
     XYLog("%s\n", __PRETTY_FUNCTION__);
     super::enable(netif);
     _fCommandGate->enable();
+#ifdef AIRPORT_WCL
+    return _fCommandGate->runAction(
+        [](OSObject *owner, void *, void *, void *, void *) -> IOReturn {
+            return static_cast<AirportItlwm *>(owner)->applyPowerState();
+        });
+#else
     if (power_state)
         enableAdapter(bsdInterface);
     return kIOReturnSuccess;
+#endif
 }
 
 IOReturn AirportItlwm::disable(IO80211SkywalkInterface *netif)
@@ -1133,25 +1140,7 @@ setPOWER(OSObject *object,
 #ifdef AIRPORT_WCL
     if (!pd)
         return kIOReturnError;
-    IOLog("itlwm: setPOWER: num_radios[%d]  power_state(0:%u  1:%u  2:%u  3:%u)\n", pd->num_radios, pd->power_state[0], pd->power_state[1], pd->power_state[2], pd->power_state[3]);
-    if (pd->num_radios > 0) {
-        bool isRunning = (fHalService->get80211Controller()->ic_ac.ac_if.if_flags & IFF_RUNNING) != 0;
-        if (pd->power_state[0] == 0) {
-            fHalService->get80211Controller()->ic_wcl_mac_reconfig = false;
-            changePowerStateToPriv(kPowerStateOff);
-            if (fHalService->get80211Controller()->ic_ac.ac_if.if_flags & (IFF_UP | IFF_RUNNING)) {
-                net80211_ifstats(fHalService->get80211Controller());
-                disableAdapter(bsdInterface);
-            }
-        } else {
-            changePowerStateToPriv(kPowerStateOn);
-            if (!isRunning)
-                enableAdapter(bsdInterface);
-        }
-        power_state = (pd->power_state[0]);
-    }
-
-    return kIOReturnSuccess;
+    return _fCommandGate->runAction(setPowerGated, pd);
 #else
     if (!pd)
         return kIOReturnError;
@@ -1175,6 +1164,39 @@ setPOWER(OSObject *object,
     return kIOReturnSuccess;
 #endif
 }
+
+#ifdef AIRPORT_WCL
+IOReturn AirportItlwm::setPowerGated(OSObject *owner, void *arg0, void *, void *, void *)
+{
+    auto self = static_cast<AirportItlwm *>(owner);
+    auto pd = static_cast<apple80211_power_data *>(arg0);
+    if (!pd->num_radios)
+        return kIOReturnSuccess;
+    self->power_state = pd->power_state[0] != 0;
+    auto ic = self->fHalService->get80211Controller();
+    IOLog("itlwm: radio power=%u pm=%u flags=0x%x\n",
+          self->power_state, self->pmPowerState, ic->ic_if.if_flags);
+    if (!self->power_state) {
+        ic->ic_wcl_mac_reconfig = false;
+        if (ic->ic_if.if_flags & (IFF_UP | IFF_RUNNING))
+            net80211_ifstats(ic);
+    }
+    self->changePowerStateToPriv(self->power_state ? kPowerStateOn : kPowerStateOff);
+    return self->applyPowerState();
+}
+
+IOReturn AirportItlwm::applyPowerState()
+{
+    auto ifp = &fHalService->get80211Controller()->ic_if;
+    if (!power_state || pmPowerState != kPowerStateOn) {
+        disableAdapter(bsdInterface);
+        return kIOReturnSuccess;
+    }
+    if (!(ifp->if_flags & IFF_UP))
+        return enableAdapter(bsdInterface);
+    return kIOReturnSuccess;
+}
+#endif
 
 SInt32 AirportItlwm::apple80211_ioctl(IO80211SkywalkInterface *interface,unsigned long cmd,void *data, bool b1, bool b2)
 {
@@ -1382,7 +1404,14 @@ void AirportItlwm::setPowerStateOff()
 {
     XYLog("%s\n", __FUNCTION__);
     pmPowerState = kPowerStateOff;
+#ifdef AIRPORT_WCL
+    IOLog("itlwm: PM off radio=%u flags=0x%x\n",
+          power_state, fHalService->get80211Controller()->ic_if.if_flags);
+    fHalService->get80211Controller()->ic_wcl_mac_reconfig = false;
+    applyPowerState();
+#else
     disableAdapter(bsdInterface);
+#endif
     pmPolicyMaker->acknowledgeSetPowerState();
 }
 
@@ -1390,6 +1419,12 @@ void AirportItlwm::setPowerStateOn()
 {
     XYLog("%s\n", __FUNCTION__);
     pmPowerState = kPowerStateOn;
+#ifdef AIRPORT_WCL
+    IOReturn status = applyPowerState();
+    IOLog("itlwm: PM on radio=%u flags=0x%x activation=0x%x\n",
+          power_state, fHalService->get80211Controller()->ic_if.if_flags, status);
+#else
     enableAdapter(bsdInterface);
+#endif
     pmPolicyMaker->acknowledgeSetPowerState();
 }

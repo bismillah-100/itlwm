@@ -122,6 +122,9 @@
 #include "ItlIwm.hpp"
 #include "rs.h"
 #include <FwData.h>
+#ifdef AIRPORT_WCL
+#include <kern/clock.h>
+#endif
 
 uint8_t ItlIwm::
 iwm_lookup_cmd_ver(struct iwm_softc *sc, uint8_t grp, uint8_t cmd)
@@ -780,6 +783,38 @@ iwm_firmware_load_sect(struct iwm_softc *sc, uint32_t dst_addr,
     return err;
 }
 
+#ifdef AIRPORT_WCL
+int ItlIwm::iwm_wait_notification(struct iwm_softc *sc, int *value, int bits, uint32_t milliseconds)
+{
+    if (!getMainWorkLoop()->inGate()) {
+        struct Wait {
+            ItlIwm *service;
+            iwm_softc *sc;
+            int *value;
+            int bits;
+            uint32_t milliseconds;
+        } wait = {this, sc, value, bits, milliseconds};
+        return getMainCommandGate()->runAction(
+            [](OSObject *, void *arg0, void *, void *, void *) -> IOReturn {
+                auto wait = static_cast<Wait *>(arg0);
+                return wait->service->iwm_wait_notification(
+                    wait->sc, wait->value, wait->bits, wait->milliseconds);
+            }, &wait);
+    }
+    int generation = sc->sc_generation;
+    uint64_t deadline;
+    clock_interval_to_deadline(milliseconds, kMillisecondScale, &deadline);
+    while ((*value & bits) != bits) {
+        int result = getMainCommandGate()->commandSleep(value, deadline, THREAD_UNINT);
+        if (generation != sc->sc_generation)
+            return ENXIO;
+        if (result != THREAD_AWAKENED && (*value & bits) != bits)
+            return result == THREAD_TIMED_OUT ? EWOULDBLOCK : EINTR;
+    }
+    return 0;
+}
+#endif
+
 int ItlIwm::
 iwm_firmware_load_chunk(struct iwm_softc *sc, uint32_t dst_addr,
                         const uint8_t *chunk, uint32_t byte_cnt)
@@ -823,12 +858,18 @@ iwm_firmware_load_chunk(struct iwm_softc *sc, uint32_t dst_addr,
     iwm_nic_unlock(sc);
     
     /* Wait for this segment to load. */
+#ifdef AIRPORT_WCL
+    err = iwm_wait_notification(sc, &sc->sc_fw_chunk_done, 1, 1000);
+    if (err == ENXIO)
+        return err;
+#else
     err = 0;
     while (!sc->sc_fw_chunk_done) {
         err = tsleep_nsec(&sc->sc_fw, 0, "iwmfw", SEC_TO_NSEC(1));
         if (err)
             break;
     }
+#endif
     
     if (!sc->sc_fw_chunk_done)
         XYLog("%s: fw chunk addr 0x%x len %d failed to load\n",
@@ -991,6 +1032,9 @@ iwm_load_firmware(struct iwm_softc *sc, enum iwm_ucode_type ucode_type)
     int err/*, w*/;
     
     sc->sc_uc.uc_intr = 0;
+#ifdef AIRPORT_WCL
+    sc->sc_uc.uc_ok = 0;
+#endif
     
     if (sc->sc_device_family >= IWM_DEVICE_FAMILY_8000)
         err = iwm_load_firmware_8000(sc, ucode_type);
@@ -1004,7 +1048,15 @@ iwm_load_firmware(struct iwm_softc *sc, enum iwm_ucode_type ucode_type)
 //    for (w = 0; !sc->sc_uc.uc_intr && w < 10; w++) {
 //        err = tsleep_nsec(&sc->sc_uc, 0, "iwmuc", MSEC_TO_NSEC(100));
 //    }
+#ifdef AIRPORT_WCL
+    err = iwm_wait_notification(sc, &sc->sc_uc.uc_intr, 1, 1000);
+    if (err == ENXIO)
+        return err;
+    if (!err && !sc->sc_uc.uc_ok)
+        err = EIO;
+#else
     err = tsleep_nsec(&sc->sc_uc, 0, "iwmuc", SEC_TO_NSEC(1));
+#endif
     if (err || !sc->sc_uc.uc_ok)
         XYLog("%s: could not load firmware\n", DEVNAME(sc));
     
@@ -1062,6 +1114,9 @@ iwm_load_ucode_wait_alive(struct iwm_softc *sc,
     enum iwm_ucode_type old_type = sc->sc_uc_current;
     struct iwm_fw_sects *fw = &sc->sc_fw.fw_sects[ucode_type];
     int err;
+#ifdef AIRPORT_WCL
+    int generation = sc->sc_generation;
+#endif
     
     err = iwm_read_firmware(sc, ucode_type);
     if (err)
@@ -1074,6 +1129,10 @@ iwm_load_ucode_wait_alive(struct iwm_softc *sc,
     
     sc->sc_uc_current = ucode_type;
     err = iwm_start_fw(sc, ucode_type);
+#ifdef AIRPORT_WCL
+    if (generation != sc->sc_generation)
+        return ENXIO;
+#endif
     if (err) {
         sc->sc_uc_current = old_type;
         return err;
@@ -1097,6 +1156,10 @@ iwm_load_ucode_wait_alive(struct iwm_softc *sc,
         }
         
         err = iwm_send_paging_cmd(sc, fw);
+#ifdef AIRPORT_WCL
+        if (generation != sc->sc_generation)
+            return ENXIO;
+#endif
         if (err) {
             XYLog("%s: failed to send the paging cmd\n",
                   DEVNAME(sc));
@@ -1178,7 +1241,11 @@ iwm_run_init_mvm_ucode(struct iwm_softc *sc, int justnvm)
 //        if (err)
 //            break;
 //    }
+#ifdef AIRPORT_WCL
+    err = iwm_wait_notification(sc, &sc->sc_init_complete, wait_flags, 2000);
+#else
     err = tsleep_nsec(&sc->sc_init_complete, 0, "iwminit", SEC_TO_NSEC(2));
+#endif
     
     return err;
 }

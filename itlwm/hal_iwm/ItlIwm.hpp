@@ -130,6 +130,9 @@ public:
     int    iwm_set_default_calib(struct iwm_softc *, const void *);
     void    iwm_fw_info_free(struct iwm_fw_info *);
     int    iwm_read_firmware(struct iwm_softc *, enum iwm_ucode_type);
+#ifdef AIRPORT_WCL
+    int iwm_wait_notification(struct iwm_softc *, int *, int, uint32_t);
+#endif
     uint32_t iwm_read_prph_unlocked(struct iwm_softc *, uint32_t);
     uint32_t iwm_read_prph(struct iwm_softc *, uint32_t);
     void    iwm_write_prph_unlocked(struct iwm_softc *, uint32_t, uint32_t);

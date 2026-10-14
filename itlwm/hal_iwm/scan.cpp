@@ -1006,7 +1006,11 @@ iwm_scan(struct iwm_softc *sc)
     }
     ic->ic_state = IEEE80211_S_SCAN;
     iwm_led_blink_start(sc);
+#ifdef AIRPORT_WCL
+    getMainCommandGate()->commandWakeup(&ic->ic_state);
+#else
     wakeupOn(&ic->ic_state); /* wake iwm_init() */
+#endif
     
     return 0;
 }

@@ -215,6 +215,10 @@ public:
     virtual IOReturn setWakeOnMagicPacket( bool active ) override;
     void setPowerStateOff(void);
     void setPowerStateOn(void);
+#ifdef AIRPORT_WCL
+    static IOReturn setPowerGated(OSObject *, void *, void *, void *, void *);
+    IOReturn applyPowerState();
+#endif
     void unregistPM();
     bool initPCIPowerManagment(IOPCIDevice *provider);
 

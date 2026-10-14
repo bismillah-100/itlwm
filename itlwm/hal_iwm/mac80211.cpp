@@ -120,6 +120,9 @@
  */
 
 #include "ItlIwm.hpp"
+#ifdef AIRPORT_WCL
+#include <kern/clock.h>
+#endif
 #include <net/ethernet.h>
 #include <IOKit/IOCommandGate.h>
 #include <net80211/ieee80211_priv.h>
@@ -3099,6 +3102,17 @@ iwm_newstate_task(void *psc)
 {
     struct iwm_softc *sc = (struct iwm_softc *)psc;
     ItlIwm *that = container_of(sc, ItlIwm, com);
+#ifdef AIRPORT_WCL
+    if (!that->getMainWorkLoop()->inGate()) {
+        that->getMainCommandGate()->runAction(
+            [](OSObject *, void *arg0, void *, void *, void *) -> IOReturn {
+                iwm_newstate_task(arg0);
+                return kIOReturnSuccess;
+            }, psc);
+        return;
+    }
+    int generation = sc->sc_generation;
+#endif
     struct ieee80211com *ic = &sc->sc_ic;
     enum ieee80211_state nstate = sc->ns_nstate;
     enum ieee80211_state ostate = ic->ic_state;
@@ -3164,7 +3178,11 @@ iwm_newstate_task(void *psc)
         }
         
         /* Die now if iwm_stop() was called while we were sleeping. */
-        if (sc->sc_flags & IWM_FLAG_SHUTDOWN) {
+        if ((sc->sc_flags & IWM_FLAG_SHUTDOWN)
+#ifdef AIRPORT_WCL
+            || generation != sc->sc_generation
+#endif
+            ) {
             //                refcnt_rele_wake(&sc->task_refs);
             splx(s);
             return;
@@ -3197,6 +3215,12 @@ iwm_newstate_task(void *psc)
     }
     
 out:
+#ifdef AIRPORT_WCL
+    if (generation != sc->sc_generation) {
+        splx(s);
+        return;
+    }
+#endif
     if ((sc->sc_flags & IWM_FLAG_SHUTDOWN) == 0) {
         if (err)
             task_add(systq, &sc->init_task);
@@ -3406,6 +3430,9 @@ iwm_init_hw(struct iwm_softc *sc)
     XYLog("%s\n", __FUNCTION__);
     struct ieee80211com *ic = &sc->sc_ic;
     int err, i, ac, qid;
+#ifdef AIRPORT_WCL
+    int generation = sc->sc_generation;
+#endif
     
     err = iwm_preinit(sc);
     if (err)
@@ -3511,6 +3538,10 @@ iwm_init_hw(struct iwm_softc *sc)
     
     
     err = iwm_config_ltr(sc);
+#ifdef AIRPORT_WCL
+    if (err == ENXIO)
+        goto err;
+#endif
     if (err) {
         XYLog("%s: PCIe LTR configuration failed (error %d)\n",
               DEVNAME(sc), err);
@@ -3584,6 +3615,9 @@ iwm_init_hw(struct iwm_softc *sc)
     }
     
 err:
+#ifdef AIRPORT_WCL
+    if (generation == sc->sc_generation)
+#endif
     iwm_nic_unlock(sc);
     return err;
 }
@@ -3591,6 +3625,16 @@ err:
 int ItlIwm::
 iwm_init(struct _ifnet *ifp)
 {
+#ifdef AIRPORT_WCL
+    if (!getMainWorkLoop()->inGate()) {
+        return getMainCommandGate()->runAction(
+            [](OSObject *, void *arg0, void *arg1, void *, void *) -> IOReturn {
+                return static_cast<ItlIwm *>(arg0)->iwm_init(static_cast<_ifnet *>(arg1));
+            }, this, ifp);
+    }
+    if (!(ifp->if_flags & IFF_UP))
+        return ENXIO;
+#endif
     XYLog("%s\n", __FUNCTION__);
     struct iwm_softc *sc = (struct iwm_softc*)ifp->if_softc;
     struct ieee80211com *ic = &sc->sc_ic;
@@ -3609,10 +3653,15 @@ iwm_init(struct _ifnet *ifp)
     
 #ifdef AIRPORT_WCL
     ic->ic_wcl_driver_ready = false;
+    IOLog("itlwm: IWM init begin generation=%d flags=0x%x\n", generation, ifp->if_flags);
     if (ic->ic_event_handler)
         ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_RESET_BEGIN, NULL);
 #endif
     err = iwm_init_hw(sc);
+#ifdef AIRPORT_WCL
+    if (generation != sc->sc_generation || !(ifp->if_flags & IFF_UP))
+        return ENXIO;
+#endif
     if (err) {
         if (generation == sc->sc_generation)
             iwm_stop_device(sc);
@@ -3644,17 +3693,21 @@ iwm_init(struct _ifnet *ifp)
          * ieee80211_begin_scan() ends up scheduling iwm_newstate_task().
          * Wait until the transition to SCAN state has completed.
          */
-        do {
-            err = tsleep_nsec(&ic->ic_state, PCATCH, "iwminit",
-                              SEC_TO_NSEC(1));
-            if (generation != sc->sc_generation)
+        uint64_t deadline;
+        clock_interval_to_deadline(1, kSecondScale, &deadline);
+        while (ic->ic_state != IEEE80211_S_SCAN) {
+            int result = getMainCommandGate()->commandSleep(&ic->ic_state, deadline, THREAD_UNINT);
+            if (generation != sc->sc_generation || !(ifp->if_flags & IFF_UP))
                 return ENXIO;
-            if (err) {
+            if (result != THREAD_AWAKENED && ic->ic_state != IEEE80211_S_SCAN) {
                 iwm_stop(ifp);
-                return err;
+                return result == THREAD_TIMED_OUT ? EWOULDBLOCK : EINTR;
             }
-        } while (ic->ic_state != IEEE80211_S_SCAN);
+        }
+        if (generation != sc->sc_generation || !(ifp->if_flags & IFF_UP))
+            return ENXIO;
     }
+    IOLog("itlwm: IWM init ready generation=%d flags=0x%x\n", generation, ifp->if_flags);
     if (ic->ic_event_handler)
         ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_READY, NULL);
 #else
@@ -3778,6 +3831,16 @@ iwm_start(struct _ifnet *ifp)
 void ItlIwm::
 iwm_stop(struct _ifnet *ifp)
 {
+#ifdef AIRPORT_WCL
+    if (!getMainWorkLoop()->inGate()) {
+        getMainCommandGate()->runAction(
+            [](OSObject *, void *arg0, void *arg1, void *, void *) -> IOReturn {
+                static_cast<ItlIwm *>(arg0)->iwm_stop(static_cast<_ifnet *>(arg1));
+                return kIOReturnSuccess;
+            }, this, ifp);
+        return;
+    }
+#endif
     XYLog("%s\n", __FUNCTION__);
     struct iwm_softc *sc = (struct iwm_softc*)ifp->if_softc;
     struct ieee80211com *ic = &sc->sc_ic;
@@ -3787,6 +3850,14 @@ iwm_stop(struct _ifnet *ifp)
     //    rw_assert_wrlock(&sc->ioctl_rwl);
     
     sc->sc_flags |= IWM_FLAG_SHUTDOWN; /* Disallow new tasks. */
+#ifdef AIRPORT_WCL
+    sc->sc_generation++;
+    IOLog("itlwm: IWM stop generation=%d flags=0x%x\n", sc->sc_generation, ifp->if_flags);
+    getMainCommandGate()->commandWakeup(&sc->sc_fw_chunk_done);
+    getMainCommandGate()->commandWakeup(&sc->sc_uc.uc_intr);
+    getMainCommandGate()->commandWakeup(&sc->sc_init_complete);
+    getMainCommandGate()->commandWakeup(&ic->ic_state);
+#endif
     
     /* Cancel scheduled tasks and let any stale tasks finish up. */
     task_del(systq, &sc->init_task);
@@ -3801,7 +3872,9 @@ iwm_stop(struct _ifnet *ifp)
     
     /* Reset soft state. */
     
+#ifndef AIRPORT_WCL
     sc->sc_generation++;
+#endif
     for (i = 0; i < nitems(sc->sc_cmd_resp_pkt); i++) {
         ::free(sc->sc_cmd_resp_pkt[i]);
         sc->sc_cmd_resp_pkt[i] = NULL;
@@ -4350,7 +4423,11 @@ iwm_intr(OSObject *arg, IOInterruptEventSource* sender, int count)
         handled |= IWM_CSR_INT_BIT_FH_TX;
         
         sc->sc_fw_chunk_done = 1;
+#ifdef AIRPORT_WCL
+        that->getMainCommandGate()->commandWakeup(&sc->sc_fw_chunk_done);
+#else
         that->wakeupOn(&sc->sc_fw);
+#endif
     }
     
     if (r1 & (IWM_CSR_INT_BIT_FH_RX | IWM_CSR_INT_BIT_SW_RX |
@@ -4412,7 +4489,11 @@ iwm_intr_msix(OSObject *object, IOInterruptEventSource* sender, int count)
     /* firmware chunk loaded */
     if (inta_fh & IWM_MSIX_FH_INT_CAUSES_D2S_CH0_NUM) {
         sc->sc_fw_chunk_done = 1;
+#ifdef AIRPORT_WCL
+        that->getMainCommandGate()->commandWakeup(&sc->sc_fw_chunk_done);
+#else
         that->wakeupOn(&sc->sc_fw);
+#endif
     }
     
     if ((inta_fh & IWM_MSIX_FH_INT_CAUSES_FH_ERR) ||
@@ -4572,6 +4653,10 @@ iwm_preinit(struct iwm_softc *sc)
     }
     
     err = iwm_run_init_mvm_ucode(sc, 1);
+#ifdef AIRPORT_WCL
+    if (err == ENXIO)
+        return err;
+#endif
     iwm_stop_device(sc);
     if (err)
         return err;
@@ -5111,6 +5196,16 @@ iwm_init_task(void *arg1)
     XYLog("%s\n", __FUNCTION__);
     struct iwm_softc *sc = (struct iwm_softc *)arg1;
     ItlIwm *that = container_of(sc, ItlIwm, com);
+#ifdef AIRPORT_WCL
+    if (!that->getMainWorkLoop()->inGate()) {
+        that->getMainCommandGate()->runAction(
+            [](OSObject *, void *arg0, void *, void *, void *) -> IOReturn {
+                iwm_init_task(arg0);
+                return kIOReturnSuccess;
+            }, arg1);
+        return;
+    }
+#endif
     struct _ifnet *ifp = &sc->sc_ic.ic_if;
     int s = splnet();
     int generation = sc->sc_generation;
@@ -5130,18 +5225,27 @@ iwm_init_task(void *arg1)
     
     if (!fatal && (ifp->if_flags & (IFF_UP | IFF_RUNNING)) == IFF_UP) {
 #ifdef AIRPORT_WCL
+        generation = sc->sc_generation + 1;
         int error = that->iwm_init(ifp);
         // One bounded retry for the observed cold-boot firmware DMA timeout.
         // Respect a concurrent power-off/RF kill instead of bringing it back up.
         if ((error == ETIMEDOUT || error == EWOULDBLOCK) && (ifp->if_flags & IFF_UP) &&
             !(sc->sc_flags & (IWM_FLAG_SHUTDOWN | IWM_FLAG_RFKILL | IWM_FLAG_HW_ERR))) {
             XYLog("WCL: retrying firmware initialization after timeout\n");
+            generation = sc->sc_generation + 1;
             error = that->iwm_init(ifp);
+        }
+        if (error == ENXIO && (generation != sc->sc_generation || !(ifp->if_flags & IFF_UP))) {
+            IOLog("itlwm: IWM init cancelled generation=%d flags=0x%x\n",
+                  sc->sc_generation, ifp->if_flags);
+            splx(s);
+            return;
         }
         if (error && !(ifp->if_flags & IFF_RUNNING)) {
             sc->sc_ic.ic_wcl_mac_reconfig = false;
             ifp->if_flags &= ~IFF_UP;
-            XYLog("WCL: initialization failed %d; activation can be retried\n", error);
+            IOLog("itlwm: IWM init failed error=%d generation=%d flags=0x%x\n",
+                  error, sc->sc_generation, ifp->if_flags);
             if (sc->sc_ic.ic_event_handler)
                 sc->sc_ic.ic_event_handler(&sc->sc_ic, IEEE80211_EVT_DRIVER_STOPPED, NULL);
         }
@@ -5381,11 +5485,15 @@ iwm_activate(struct iwm_softc *sc, int act)
     
     switch (act) {
         case DVACT_QUIESCE:
+#ifdef AIRPORT_WCL
+            iwm_stop(ifp);
+#else
             if (ifp->if_flags & IFF_RUNNING) {
                 //                rw_enter_write(&sc->ioctl_rwl);
                 iwm_stop(ifp);
                 //                rw_exit(&sc->ioctl_rwl);
             }
+#endif
             break;
         case DVACT_RESUME:
             err = iwm_resume(sc);
@@ -5397,8 +5505,16 @@ iwm_activate(struct iwm_softc *sc, int act)
             /* Hardware should be up at this point. */
             if (iwm_set_hw_ready(sc))
                 task_add(systq, &sc->init_task);
+#ifdef AIRPORT_WCL
+            else
+                err = ETIMEDOUT;
+#endif
             break;
     }
     
+#ifdef AIRPORT_WCL
+    return err;
+#else
     return 0;
+#endif
 }
