@@ -1406,11 +1406,16 @@ ieee80211_end_scan(struct _ifnet *ifp)
 {
     struct ieee80211com *ic = (struct ieee80211com *)ifp;
     struct ieee80211_node *ni, *selbs = NULL, *curbs = NULL;
-    int bgscan = ((ic->ic_flags & IEEE80211_F_BGSCAN) &&
+    int was_bgscan = (ic->ic_flags & IEEE80211_F_BGSCAN) != 0;
+    int disable_auto = (ic->ic_flags & IEEE80211_F_DISABLE_BG_AUTO_CONNECT) != 0;
+    int bgscan = (was_bgscan &&
                   ic->ic_opmode == IEEE80211_M_STA &&
                   ic->ic_state == IEEE80211_S_RUN);
-    int roamscan = bgscan &&
-                (ic->ic_flags & IEEE80211_F_DISABLE_BG_AUTO_CONNECT) == 0;
+    int roamscan = bgscan && !disable_auto;
+
+    ic->ic_flags &= ~IEEE80211_F_DISABLE_BG_AUTO_CONNECT;
+    if (!roamscan)
+        ic->ic_flags &= ~IEEE80211_F_BGSCAN;
     
     if (ic->ic_event_handler)
         (*ic->ic_event_handler)(ic, IEEE80211_EVT_SCAN_DONE, NULL);
@@ -1426,6 +1431,9 @@ ieee80211_end_scan(struct _ifnet *ifp)
     
     if (ic->ic_opmode == IEEE80211_M_STA)
         ieee80211_clean_inactive_nodes(ic, IEEE80211_INACT_SCAN);
+
+    if (was_bgscan && disable_auto)
+        return;
     
     ni = RB_MIN(ieee80211_tree, &ic->ic_tree);
     

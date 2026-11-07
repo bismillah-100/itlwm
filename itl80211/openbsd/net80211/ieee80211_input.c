@@ -2957,8 +2957,13 @@ ieee80211_recv_deauth(struct ieee80211com *ic, mbuf_t m,
             int stay_auth = ((ic->ic_userflags & IEEE80211_F_STAYAUTH) &&
                              ic->ic_state >= IEEE80211_S_AUTH);
             if (!(roamscan || stay_auth))
+#ifdef AIRPORT_WCL
+                ieee80211_new_state(ic, IEEE80211_S_SCAN,
+                                    IEEE80211_FC0_SUBTYPE_DEAUTH);
+#else
                 ieee80211_new_state(ic, IEEE80211_S_AUTH,
                                     IEEE80211_FC0_SUBTYPE_DEAUTH);
+#endif
         }
             break;
 #ifndef IEEE80211_STA_ONLY
@@ -3014,8 +3019,6 @@ ieee80211_recv_disassoc(struct ieee80211com *ic, mbuf_t m,
         case IEEE80211_M_STA: {
             int bgscan = ((ic->ic_flags & IEEE80211_F_BGSCAN) &&
                           ic->ic_state == IEEE80211_S_RUN);
-            int roamscan = bgscan &&
-                        (ic->ic_flags & IEEE80211_F_DISABLE_BG_AUTO_CONNECT) == 0;
             /*
              * A disassoc only ends an association we have. Before that it
              * refers to a stale session: after sleep the AP still holds one
@@ -3026,9 +3029,18 @@ ieee80211_recv_disassoc(struct ieee80211com *ic, mbuf_t m,
              */
             if (ic->ic_state < IEEE80211_S_ASSOC)
                 break;
-            if (!roamscan) /* ignore disassoc during bgscan */
+            if (!bgscan) { /* ignore disassoc during bgscan */
+#ifdef AIRPORT_WCL
+                ic->ic_deauth_reason = reason;
+                if (ic->ic_event_handler)
+                    (*ic->ic_event_handler)(ic, IEEE80211_EVT_STA_DEAUTH, NULL);
+                ieee80211_new_state(ic, IEEE80211_S_SCAN,
+                                    IEEE80211_FC0_SUBTYPE_DISASSOC);
+#else
                 ieee80211_new_state(ic, IEEE80211_S_ASSOC,
                                     IEEE80211_FC0_SUBTYPE_DISASSOC);
+#endif
+            }
         }
             break;
 #ifndef IEEE80211_STA_ONLY

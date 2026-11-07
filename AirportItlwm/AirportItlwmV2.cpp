@@ -642,7 +642,14 @@ setLinkStatus(UInt32 status, const IONetworkMedium * activeMedium, UInt64 speed,
     if (status == currentStatus) {
         return true;
     }
+#ifdef AIRPORT_WCL
+    bool ret = true;
+    if (!(status & kIONetworkLinkActive)) {
+        ret = super::setLinkStatus(status, activeMedium, speed, data);
+    }
+#else
     bool ret = super::setLinkStatus(status, activeMedium, speed, data);
+#endif
     currentStatus = status;
     if (fNetIf) {
         if (status & kIONetworkLinkActive) {
@@ -669,7 +676,8 @@ setLinkStateGated(OSObject *target, void *arg0, void *arg1, void *arg2, void *ar
 {
     AirportItlwm *that = OSDynamicCast(AirportItlwm, target);
 #ifdef AIRPORT_WCL
-    that->bsdInterface->setLinkState((IO80211LinkState)(uint64_t)arg0);
+    if ((IO80211LinkState)(uint64_t)arg0 != kIO80211NetworkLinkUp && that->bsdInterface)
+        that->bsdInterface->setLinkState(kIO80211NetworkLinkDown);
     static_cast<AirportItlwmSkywalkInterface *>(that->fNetIf)->handleWCLLink(
         (IO80211LinkState)(uint64_t)arg0 == kIO80211NetworkLinkUp);
     return kIOReturnSuccess;

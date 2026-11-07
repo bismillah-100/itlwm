@@ -1440,6 +1440,8 @@ ieee80211_newstate(struct ieee80211com *ic, enum ieee80211_state nstate,
 	if (ifp->if_flags & IFF_DEBUG)
 		XYLog("%s: %s -> %s\n", ifp->if_xname,
 		    ieee80211_state_name[ostate], ieee80211_state_name[nstate]);
+	if (ostate == IEEE80211_S_RUN && nstate != IEEE80211_S_RUN)
+		ic->ic_flags &= ~(IEEE80211_F_BGSCAN | IEEE80211_F_DISABLE_BG_AUTO_CONNECT);
 	ic->ic_state = nstate;			/* state transition */
 	ni = ic->ic_bss;			/* NB: no reference held */
 	ieee80211_set_link_state(ic, LINK_STATE_DOWN);
@@ -1652,6 +1654,10 @@ justcleanup:
 		case IEEE80211_S_RUN:
 			ieee80211_stop_ampdu_tx(ic, ni, mgt);
 			ieee80211_ba_del(ni);
+			ni->ni_port_valid = 0;
+			ni->ni_rsn_supp_state = RSNA_SUPP_INITIALIZE;
+			if (ic->ic_flags & IEEE80211_F_RSNON)
+				ieee80211_crypto_clear_groupkeys(ic);
 			IEEE80211_SEND_MGMT(ic, ni,
 			    IEEE80211_FC0_SUBTYPE_ASSOC_REQ, 1);
 			break;

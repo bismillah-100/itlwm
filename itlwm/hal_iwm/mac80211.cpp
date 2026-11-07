@@ -3135,6 +3135,10 @@ iwm_newstate_task(void *psc)
     if (nstate <= ostate) {
         switch (ostate) {
             case IEEE80211_S_RUN:
+                if (sc->sc_flags & IWM_FLAG_BGSCAN) {
+                    that->iwm_scan_abort(sc);
+                    sc->sc_flags &= ~IWM_FLAG_BGSCAN;
+                }
                 err = that->iwm_run_stop(sc);
                 if (err)
                     goto out;

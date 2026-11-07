@@ -453,7 +453,8 @@ void AirportItlwmSkywalkInterface::publishWCLBeacon(const ieee80211_node *node, 
     metadata->ieLength = uint32_t(AirportWCL::selectWPA2TransitionMode(
         reinterpret_cast<uint8_t *>(metadata + 1), length));
     size_t messageSize = sizeof(*metadata) + metadata->ieLength;
-    if (assocNotified && IEEE80211_ADDR_EQ(node->ni_bssid, joinBSSID)) {
+    if ((joinPending || assocNotified || portAuthorized) &&
+        IEEE80211_ADDR_EQ(node->ni_bssid, joinBSSID)) {
         wclBssValid = messageSize <= sizeof(wclBssInfo);
         if (wclBssValid) {
             bzero(wclBssInfo, sizeof(wclBssInfo));
@@ -872,7 +873,7 @@ void AirportItlwmSkywalkInterface::handleWCLLink(bool up)
         wclBssValid = false;
         instance->postMessage(this, AirportWCL::LinkStatus, &event, sizeof(event), true);
     }
-    if (up && joinPending && assocNotified && wclFirstBeaconHeld && !firstBeaconNotified && wclBssValid)
+    if (up && joinPending && assocNotified && !firstBeaconNotified && wclBssValid)
         postWCLLinkUp();
     if (up && joinPending && firstBeaconNotified)
         finishWCLJoin(0, 0, kIOReturnSuccess);
@@ -1089,8 +1090,16 @@ IOReturn AirportItlwmSkywalkInterface::setWCL_LINK_STATE_UPDATE(apple80211_wcl_u
 {
     if (!data)
         return kIOReturnBadArgument;
-#if __IO80211_TARGET == __MAC_15_2
     const auto bytes = reinterpret_cast<const uint8_t *>(data);
+    const bool linkUp = bytes[6] != 0 && bytes[7] != 0;
+    if (bytes[6]) {
+        if (linkUp && instance && instance->bsdInterface)
+            instance->bsdInterface->setLinkState(kIO80211NetworkLinkUp);
+    } else {
+        if (instance && instance->bsdInterface)
+            instance->bsdInterface->setLinkState(kIO80211NetworkLinkDown);
+    }
+#if __IO80211_TARGET == __MAC_15_2
     if (bytes[6]) {
         if (bytes[8])
             setCurrentApAddress(reinterpret_cast<ether_addr *>(data));
@@ -1105,8 +1114,21 @@ IOReturn AirportItlwmSkywalkInterface::setWCL_LINK_STATE_UPDATE(apple80211_wcl_u
 #else
     IOReturn status = IO80211InfraInterface::setWCL_LINK_STATE_UPDATE(data);
 #endif
-    if (status == kIOReturnSuccess)
+    if (status == kIOReturnSuccess) {
+        if (bytes[6]) {
+            if (linkUp && instance)
+                instance->IONetworkController::setLinkStatus(
+                    kIONetworkLinkValid | kIONetworkLinkActive,
+                    instance->getCurrentMedium());
+        } else {
+            if (instance)
+                instance->IONetworkController::setLinkStatus(kIONetworkLinkValid);
+            ieee80211com *ic = fHalService ? fHalService->get80211Controller() : nullptr;
+            if (ic && !joinPending && ic->ic_state > IEEE80211_S_SCAN)
+                ieee80211_new_state(ic, IEEE80211_S_SCAN, -1);
+        }
         updateWCLLinkQuality(true);
+    }
     return status;
 }
 
