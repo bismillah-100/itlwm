@@ -1580,6 +1580,7 @@ ieee80211_end_scan(struct _ifnet *ifp)
     } else if (selbs == NULL) {
         goto notfound;
     }
+    ic->ic_join_chan = 0;
     ic->ic_join_chan_scanned = 0;
     
     ieee80211_node_join_bss(ic, selbs);

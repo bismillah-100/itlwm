@@ -3107,6 +3107,17 @@ iwm_newstate_task(void *psc)
     
     if (ostate == IEEE80211_S_SCAN) {
         if (nstate == ostate) {
+            if (ic->ic_join_now) {
+                ic->ic_join_now = false;
+                if (sc->sc_flags & (IWM_FLAG_SCANNING | IWM_FLAG_BGSCAN))
+                    that->iwm_scan_abort(sc);
+                sc->sc_flags &= ~(IWM_FLAG_SCANNING | IWM_FLAG_BGSCAN);
+                ieee80211_end_scan(&ic->ic_if);
+                splx(s);
+                return;
+            }
+            if (ic->ic_scan_restart)
+                goto next_scan;
             if (sc->sc_flags & IWM_FLAG_SCANNING) {
                 //                    refcnt_rele_wake(&sc->task_refs);
                 splx(s);
@@ -3114,8 +3125,11 @@ iwm_newstate_task(void *psc)
             }
             /* Firmware is no longer scanning. Do another scan. */
             goto next_scan;
-        } else
+        } else {
+            ic->ic_join_now = false;
+            ic->ic_scan_restart = false;
             that->iwm_led_blink_stop(sc);
+        }
     }
     
     if (nstate <= ostate) {
@@ -3769,6 +3783,11 @@ iwm_stop(struct _ifnet *ifp)
     ic->ic_wcl_scan_requested = false;
     ic->ic_wcl_scan_active = false;
     ic->ic_wcl_scan_ssid_length = 0;
+    ic->ic_join_now = false;
+    ic->ic_join_chan = 0;
+    ic->ic_join_chan_scanned = 0;
+    ic->ic_join_chan_retries = 0;
+    ic->ic_scan_restart = false;
     if (ic->ic_event_handler)
         ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_STOPPED, NULL);
 #endif

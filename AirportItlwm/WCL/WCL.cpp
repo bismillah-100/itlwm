@@ -331,6 +331,8 @@ IOReturn AirportItlwmSkywalkInterface::startWCLScan(AirportWCL::ScanRequest &sca
         ic->ic_state == IEEE80211_S_SCAN &&
         ((deferredScan.type != 2 && deferredScan.ssidLength != 0) ||
          ic->ic_wcl_scan_ssid_length != 0 || ic->ic_des_esslen != 0);
+    ic->ic_join_chan = 0;
+    ic->ic_join_chan_scanned = 0;
     ic->ic_wcl_scan_requested = true;
     ic->ic_wcl_scan_active = deferredScan.type != 2;
     ic->ic_wcl_scan_ssid_length = deferredScan.type == 2 ? 0 : deferredScan.ssidLength;
@@ -682,6 +684,7 @@ IOReturn AirportItlwmSkywalkInterface::startWCLJoin(AirportWCL::JoinRequest &joi
         unsigned channel = join.channelSpec & 0xff;
         ic->ic_join_chan = (channel > 0 && channel <= IEEE80211_CHAN_MAX &&
                             ic->ic_channels[channel].ic_flags) ? channel : 0;
+        ic->ic_join_chan_scanned = 0;
         ic->ic_join_chan_retries = 0;
     }
     explicit_bzero(&join, sizeof(join));
@@ -776,6 +779,10 @@ IOReturn AirportItlwmSkywalkInterface::leaveWCLNetwork()
     explicit_bzero(&deferredJoin, sizeof(deferredJoin));
     joinTimer->cancelTimeout();
     ic->ic_wcl_join_requested = false;
+    ic->ic_join_now = false;
+    ic->ic_join_chan = 0;
+    ic->ic_join_chan_scanned = 0;
+    ic->ic_join_chan_retries = 0;
     wclAssociatedBeacons = 0;
     wclBssValid = false;
     disassocIsVoluntary = true;

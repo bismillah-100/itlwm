@@ -977,6 +977,7 @@ iwm_scan(struct iwm_softc *sc)
             sc->sc_flags &= ~(IWM_FLAG_SCANNING | IWM_FLAG_BGSCAN);
         }
     }
+    ic->ic_scan_restart = false;
     
     if (isset(sc->sc_enabled_capa, IWM_UCODE_TLV_CAPA_UMAC_SCAN))
         err = iwm_umac_scan(sc, 0);
