@@ -1112,6 +1112,15 @@ iwm_ampdu_txq_advance(struct iwm_softc *sc, struct iwm_tx_ring *ring, int idx)
     while (ring->tail != idx) {
         txd = &ring->data[ring->tail];
         if (txd->m != NULL) {
+#ifdef AIRPORT_WCL
+            if (txd->flags & IWM_TXDATA_FLAG_LEAVE_DEAUTH) {
+                txd->flags &= ~IWM_TXDATA_FLAG_LEAVE_DEAUTH;
+                if (sc->sc_ic.ic_deauth_tx_pending) {
+                    sc->sc_ic.ic_deauth_tx_pending = 0;
+                    getMainCommandGate()->commandWakeup(&sc->sc_ic.ic_deauth_tx_pending);
+                }
+            }
+#endif
             if (ring->qid < IWM_FIRST_AGG_TX_QUEUE)
                 DPRINTF(("%s: missed Tx completion: tail=%d "
                          "idx=%d\n", __func__, ring->tail, idx));
@@ -1359,6 +1368,15 @@ iwm_rx_tx_cmd_single(struct iwm_softc *sc, struct iwm_tx_resp *tx_resp,
         bool flushed = false;
         if (txd->m != NULL) {
             skb_freed++;
+#ifdef AIRPORT_WCL
+            if (txd->flags & IWM_TXDATA_FLAG_LEAVE_DEAUTH) {
+                txd->flags &= ~IWM_TXDATA_FLAG_LEAVE_DEAUTH;
+                if (sc->sc_ic.ic_deauth_tx_pending) {
+                    sc->sc_ic.ic_deauth_tx_pending = 0;
+                    getMainCommandGate()->commandWakeup(&sc->sc_ic.ic_deauth_tx_pending);
+                }
+            }
+#endif
 
             memset(&info->status, 0, sizeof(info->status));
             info->flags &= ~(IEEE80211_TX_STAT_ACK | IEEE80211_TX_STAT_TX_FILTERED);
@@ -1448,6 +1466,7 @@ iwm_txd_done(struct iwm_softc *sc, struct iwm_tx_data *txd)
     txd->txmcs = 0;
     txd->txrate = 0;
     txd->fc = 0;
+    txd->flags = 0;
     memset(&txd->info, 0, sizeof(struct ieee80211_tx_info));
     if (m)
         mbuf_freem(m);
@@ -1924,6 +1943,13 @@ iwm_tx(struct iwm_softc *sc, mbuf_t m, struct ieee80211_node *ni, int ac)
     data->txrate = ni->ni_txrate;
     data->totlen = totlen;
     memcpy(&data->fc, &wh->i_fc[0], sizeof(uint16_t));
+    data->flags = 0;
+#ifdef AIRPORT_WCL
+    /* Only this frame's completion ends leaveWCLNetwork()'s wait. */
+    if (type == IEEE80211_FC0_TYPE_MGT && subtype == IEEE80211_FC0_SUBTYPE_DEAUTH &&
+        ic->ic_deauth_tx_pending)
+        data->flags |= IWM_TXDATA_FLAG_LEAVE_DEAUTH;
+#endif
     data->info.band = IEEE80211_IS_CHAN_2GHZ(ni->ni_chan) ? NL80211_BAND_2GHZ : NL80211_BAND_5GHZ;
     
     DPRINTFN(3, ("sending data: 嘤嘤嘤 qid=%d idx=%d len=%d nsegs=%d txflags=0x%08x rate_n_flags=0x%08x rateidx=%u txmcs=%d ni_txrate=%d\n",
@@ -4963,6 +4989,7 @@ iwm_attach(struct iwm_softc *sc, struct pci_attach_args *pa)
     
     ic->ic_node_alloc = iwm_node_alloc;
     ic->ic_bgscan_start = iwm_bgscan;
+    ic->ic_scan_restart_supported = true;
     ic->ic_set_key = iwm_set_key;
     ic->ic_delete_key = iwm_delete_key;
     

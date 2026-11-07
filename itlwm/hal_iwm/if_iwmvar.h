@@ -281,6 +281,8 @@ struct iwm_fw_paging {
 #define IWM_TX_RING_LOMARK    192
 #define IWM_TX_RING_HIMARK    224
 
+#define IWM_TXDATA_FLAG_LEAVE_DEAUTH 0x01
+
 struct iwm_tx_data {
 #ifdef AIRPORT_VTD
     bool commandPending;
@@ -295,6 +297,7 @@ struct iwm_tx_data {
     int txrate;
     int totlen;
     uint16_t fc;
+    uint8_t flags;
     
     struct ieee80211_tx_info info;
 };

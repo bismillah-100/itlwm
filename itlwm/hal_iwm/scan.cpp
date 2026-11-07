@@ -169,12 +169,19 @@ iwm_lmac_scan_fill_channels(struct iwm_softc *sc,
     struct ieee80211com *ic = &sc->sc_ic;
     struct ieee80211_channel *c;
     uint8_t nchan;
+    /* A join request asked for one scan of its BSS channel only. */
+    uint8_t join_chan = bgscan ? 0 : ic->ic_join_chan;
+    
+    if (!bgscan)
+        ic->ic_join_chan = 0;
     
     for (nchan = 0, c = &ic->ic_channels[1];
          c <= &ic->ic_channels[IEEE80211_CHAN_MAX] &&
          nchan < sc->sc_capa_n_scan_channels;
          c++) {
         if (c->ic_flags == 0)
+            continue;
+        if (join_chan && ieee80211_chan2ieee(ic, c) != join_chan)
             continue;
 #ifdef AIRPORT_WCL
         if (!AirportWCL::scanChannelSelected(ic->ic_wcl_scan_channels,
@@ -198,6 +205,9 @@ iwm_lmac_scan_fill_channels(struct iwm_softc *sc,
         nchan++;
     }
     
+    if (!bgscan)
+        ic->ic_join_chan_scanned = join_chan;
+
     return nchan;
 }
 
@@ -208,12 +218,19 @@ iwm_umac_scan_fill_channels(struct iwm_softc *sc,
     struct ieee80211com *ic = &sc->sc_ic;
     struct ieee80211_channel *c;
     uint8_t nchan;
+    /* A join request asked for one scan of its BSS channel only. */
+    uint8_t join_chan = bgscan ? 0 : ic->ic_join_chan;
+    
+    if (!bgscan)
+        ic->ic_join_chan = 0;
     
     for (nchan = 0, c = &ic->ic_channels[1];
          c <= &ic->ic_channels[IEEE80211_CHAN_MAX] &&
          nchan < sc->sc_capa_n_scan_channels;
          c++) {
         if (c->ic_flags == 0)
+            continue;
+        if (join_chan && ieee80211_chan2ieee(ic, c) != join_chan)
             continue;
 #ifdef AIRPORT_WCL
         if (!AirportWCL::scanChannelSelected(ic->ic_wcl_scan_channels,
@@ -236,6 +253,9 @@ iwm_umac_scan_fill_channels(struct iwm_softc *sc,
         nchan++;
     }
     
+    if (!bgscan)
+        ic->ic_join_chan_scanned = join_chan;
+
     return nchan;
 }
 
@@ -949,12 +969,12 @@ iwm_scan(struct iwm_softc *sc)
     struct _ifnet *ifp = IC2IFP(ic);
     int err;
     
-    if (sc->sc_flags & IWM_FLAG_BGSCAN) {
+    if (sc->sc_flags & (IWM_FLAG_SCANNING | IWM_FLAG_BGSCAN)) {
         err = iwm_scan_abort(sc);
         if (err) {
-            XYLog("%s: could not abort background scan\n",
-                  DEVNAME(sc));
-            return err;
+            XYLog("%s: could not abort scan, err=%d\n",
+                  DEVNAME(sc), err);
+            sc->sc_flags &= ~(IWM_FLAG_SCANNING | IWM_FLAG_BGSCAN);
         }
     }
     
@@ -1045,7 +1065,8 @@ iwm_lmac_scan_abort(struct iwm_softc *sc)
          * can occur if we send the scan abort before the
          * microcode has notified us that a scan is completed.
          */
-        return EBUSY;
+        XYLog("%s: LMAC scan not active during abort (status %u)\n",
+              DEVNAME(sc), status);
     }
     
     return 0;
