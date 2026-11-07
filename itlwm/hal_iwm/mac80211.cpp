@@ -1571,12 +1571,13 @@ iwm_rx_tx_cmd(struct iwm_softc *sc, struct iwm_rx_packet *pkt,
     DPRINTFN(2, ("%s idx=%d qid=%d txd->txmcs=%d txd->txrate=%d, frame_count=%d len=%d\n", __FUNCTION__, idx, qid, txd->txmcs, txd->txrate, ((struct           iwm_tx_resp *)pkt->data)->frame_count, ((struct iwm_tx_resp *)pkt->data)->byte_cnt));
 
     ssn = iwm_get_scd_ssn(tx_resp);
+    struct iwm_node *in = txd->in;
     iwm_rx_tx_cmd_single(sc, tx_resp, qid, IWM_AGG_SSN_TO_TXQ_IDX(ssn));
     if (qid >= IWM_FIRST_AGG_TX_QUEUE) {
         int status;
         
         status = le16toh(iwl_mvm_get_agg_status(sc, tx_resp)->status) & IWM_TX_STATUS_MSK;
-        iwm_ampdu_tx_done(sc, cmd_hdr, txd->in, ring,
+        iwm_ampdu_tx_done(sc, cmd_hdr, in, ring,
                           le32toh(tx_resp->initial_rate), tx_resp->frame_count,
                           tx_resp->failure_frame, ssn, status, iwl_mvm_get_agg_status(sc, tx_resp));
     }
@@ -2022,7 +2023,7 @@ iwm_update_sched(struct iwm_softc *sc, int qid, int cur, uint8_t sta_id, uint16_
     uint8_t sec_ctl = 0;
     uint16_t bc_ent;
     struct iwm_tx_ring *txq = &sc->txq[qid];
-    iwm_tx_cmd *tx = (struct iwm_tx_cmd *)txq->cmd;
+    iwm_tx_cmd *tx = (struct iwm_tx_cmd *)txq->cmd[cur].data;
     sec_ctl = tx->sec_ctl;
 
     scd_bc_tbl = (struct iwm_agn_scd_bc_tbl *)sc->sched_dma.vaddr;
