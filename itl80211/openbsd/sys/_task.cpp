@@ -191,6 +191,11 @@ void taskq_create_thread(void *arg)
 void
 taskq_init(void)
 {
+    if (systq->tq_mtx)
+        return;
+    systq->tq_state = TQ_S_CREATED;
+    systq->tq_running = 0;
+    systq->tq_waiting = 0;
     systq->tq_mtx = IORecursiveLockAlloc();
     TAILQ_INIT(&systq->tq_worklist);
     thread_t new_thread;
@@ -257,6 +262,7 @@ taskq_destroy(struct taskq *tq)
 
     IORecursiveLockUnlock(tq->tq_mtx);
     IORecursiveLockFree(tq->tq_mtx);
+    tq->tq_mtx = NULL;
     if (tq != systq) {
         IOFree(tq, sizeof(*tq));
     }
@@ -269,7 +275,7 @@ task_set(struct task *t, void (*fn)(void *), void *arg, const char *name)
     t->t_func = fn;
     t->t_arg = arg;
     t->t_flags = 0;
-    memcpy(t->name, name, sizeof(t->name));
+    strlcpy(t->name, name ? name : "", sizeof(t->name));
 }
 
 int
