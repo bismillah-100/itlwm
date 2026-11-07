@@ -440,6 +440,7 @@ struct ieee80211com {
     void            (*ic_update_chw)(struct ieee80211com *);
 #ifdef AIRPORT_WCL
     bool ic_wcl_mac_reconfig;
+    bool ic_wcl_driver_ready;
     int ic_deauth_tx_pending;           /* leave deauth queued, tx not done yet */
     bool ic_wcl_enterprise;
     bool ic_wcl_join_requested;

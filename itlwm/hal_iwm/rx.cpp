@@ -1267,6 +1267,8 @@ iwm_rx_pkt(struct iwm_softc *sc, struct iwm_rx_data *data, struct mbuf_list *ml)
             case IWM_SCAN_ITERATION_COMPLETE: {
                 struct iwm_lmac_scan_complete_notif *notif;
                 SYNC_RESP_STRUCT(notif, pkt, struct iwm_lmac_scan_complete_notif *);
+                if (notif->status == IWM_SCAN_OFFLOAD_ABORTED)
+                    break;
                 iwm_endscan(sc);
                 break;
             }
@@ -1274,6 +1276,8 @@ iwm_rx_pkt(struct iwm_softc *sc, struct iwm_rx_data *data, struct mbuf_list *ml)
             case IWM_SCAN_COMPLETE_UMAC: {
                 struct iwm_umac_scan_complete *notif;
                 SYNC_RESP_STRUCT(notif, pkt, struct iwm_umac_scan_complete *);
+                if (notif->status == IWM_SCAN_OFFLOAD_ABORTED)
+                    break;
                 iwm_endscan(sc);
                 break;
             }
@@ -1281,7 +1285,6 @@ iwm_rx_pkt(struct iwm_softc *sc, struct iwm_rx_data *data, struct mbuf_list *ml)
             case IWM_SCAN_ITERATION_COMPLETE_UMAC: {
                 struct iwm_umac_scan_iter_complete_notif *notif;
                 SYNC_RESP_STRUCT(notif, pkt, struct iwm_umac_scan_iter_complete_notif *);
-                iwm_endscan(sc);
                 break;
             }
                 

@@ -1288,7 +1288,8 @@ ieee80211_node_join_bss(struct ieee80211com *ic, struct ieee80211_node *selbs, i
         int roamscan = bgscan &&
                     (ic->ic_flags & IEEE80211_F_DISABLE_BG_AUTO_CONNECT) == 0;
         int auth_next = (ic->ic_opmode == IEEE80211_M_STA &&
-                         ic->ic_state == IEEE80211_S_AUTH);
+                         (ic->ic_state == IEEE80211_S_AUTH ||
+                          ic->ic_state == IEEE80211_S_ASSOC));
         int mgt = -1;
         
         XYLog("%s ic_state=%d\n", __FUNCTION__, ic->ic_state);
@@ -1333,7 +1334,11 @@ ieee80211_node_choose_bss(struct ieee80211com *ic, int bgscan,
     
     for (; ni != NULL; ni = nextbs) {
         nextbs = RB_NEXT(ieee80211_tree, &ic->ic_tree, ni);
+#ifdef AIRPORT_WCL
+        if (ni->ni_fails && !ic->ic_wcl_join_requested) {
+#else
         if (ni->ni_fails) {
+#endif
             /*
              * The configuration of the access points may change
              * during my scan.  So delete the entry for the AP

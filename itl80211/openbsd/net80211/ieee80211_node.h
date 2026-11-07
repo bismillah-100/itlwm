@@ -51,7 +51,11 @@
 #include <libkern/OSAtomic.h>
 
 #define	IEEE80211_PSCAN_WAIT	5		/* passive scan wait */
+#ifdef AIRPORT_WCL
+#define	IEEE80211_TRANS_WAIT	2		/* transition wait */
+#else
 #define	IEEE80211_TRANS_WAIT	5		/* transition wait */
+#endif
 #define	IEEE80211_INACT_WAIT	5		/* inactivity timer interval */
 #define	IEEE80211_INACT_MAX	(300/IEEE80211_INACT_WAIT)
 #define	IEEE80211_CACHE_SIZE	200

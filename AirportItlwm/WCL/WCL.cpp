@@ -250,7 +250,7 @@ IOReturn AirportItlwmSkywalkInterface::beginWCLScan(apple80211ScanRequest *reque
     if ((ic->ic_if.if_flags & IFF_UP) && !joinPending &&
         (scanDeferred ||
          ic->ic_wcl_mac_reconfig || !(ic->ic_if.if_flags & IFF_RUNNING) ||
-         ic->ic_state == IEEE80211_S_INIT)) {
+         !ic->ic_wcl_driver_ready)) {
         if (scanDeferred) {
             if (scan.type != 2)
                 deferredScan.type = scan.type;
@@ -587,7 +587,7 @@ IOReturn AirportItlwmSkywalkInterface::startWCLJoin(AirportWCL::JoinRequest &joi
     // available at firmware start (IEEE80211_EVT_DRIVER_RESET_BEGIN).
     if (supported && !joinPending && (ic->ic_if.if_flags & IFF_UP) &&
         (ic->ic_wcl_mac_reconfig || !(ic->ic_if.if_flags & IFF_RUNNING) ||
-         ic->ic_state == IEEE80211_S_INIT)) {
+         !ic->ic_wcl_driver_ready)) {
         deferredJoin = join;
         memcpy(joinBSSID, join.bssid, sizeof(joinBSSID));
         explicit_bzero(&join, sizeof(join));

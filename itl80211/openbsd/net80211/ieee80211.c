@@ -922,6 +922,19 @@ ieee80211_watchdog(struct _ifnet *ifp)
                 ieee80211_node_join_bss(ic, ni);
                 goto done;
             }
+            if (ic->ic_state == IEEE80211_S_ASSOC && ni && ni->ni_fails < 3) {
+                if (IEEE80211_SEND_MGMT(ic, ic->ic_bss,
+                    IEEE80211_FC0_SUBTYPE_ASSOC_REQ, 0) == 0)
+                    goto done;
+            }
+#ifdef AIRPORT_WCL
+            if (ic->ic_wcl_join_requested) {
+                if (ni)
+                    ni->ni_fails = 0;
+                if (ic->ic_bss && ic->ic_bss->ni_chan != IEEE80211_CHAN_ANYC)
+                    ic->ic_join_chan = ieee80211_chan2ieee(ic, ic->ic_bss->ni_chan);
+            }
+#endif
             if (ISSET(ic->ic_flags, IEEE80211_F_AUTO_JOIN))
                 ieee80211_deselect_ess(ic);
         }

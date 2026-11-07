@@ -3597,6 +3597,7 @@ iwm_init(struct _ifnet *ifp)
     //        refcnt_init(&sc->task_refs);
     
 #ifdef AIRPORT_WCL
+    ic->ic_wcl_driver_ready = false;
     if (ic->ic_event_handler)
         ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_RESET_BEGIN, NULL);
 #endif
@@ -3623,6 +3624,29 @@ iwm_init(struct _ifnet *ifp)
         return 0;
     }
     
+#ifdef AIRPORT_WCL
+    ic->ic_wcl_driver_ready = true;
+    if (ic->ic_wcl_scan_requested || ic->ic_wcl_join_requested) {
+        ieee80211_begin_scan(ifp);
+        
+        /*
+         * ieee80211_begin_scan() ends up scheduling iwm_newstate_task().
+         * Wait until the transition to SCAN state has completed.
+         */
+        do {
+            err = tsleep_nsec(&ic->ic_state, PCATCH, "iwminit",
+                              SEC_TO_NSEC(1));
+            if (generation != sc->sc_generation)
+                return ENXIO;
+            if (err) {
+                iwm_stop(ifp);
+                return err;
+            }
+        } while (ic->ic_state != IEEE80211_S_SCAN);
+    }
+    if (ic->ic_event_handler)
+        ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_READY, NULL);
+#else
     ieee80211_begin_scan(ifp);
     
     /*
@@ -3639,9 +3663,6 @@ iwm_init(struct _ifnet *ifp)
             return err;
         }
     } while (ic->ic_state != IEEE80211_S_SCAN);
-#ifdef AIRPORT_WCL
-    if (ic->ic_event_handler)
-        ic->ic_event_handler(ic, IEEE80211_EVT_DRIVER_READY, NULL);
 #endif
     
     return 0;
@@ -3777,6 +3798,7 @@ iwm_stop(struct _ifnet *ifp)
     }
     ifp->if_flags &= ~IFF_RUNNING;
 #ifdef AIRPORT_WCL
+    ic->ic_wcl_driver_ready = false;
     // Firmware scan was cancelled by stop_device; no completion will clear these.
     // Clear software busy state before advertising the stop or starting a new scan.
     ic->ic_flags &= ~(IEEE80211_F_BGSCAN | IEEE80211_F_ASCAN);
