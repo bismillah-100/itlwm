@@ -175,8 +175,10 @@ ieee80211_input_hwdecrypt(struct ieee80211com *ic, struct ieee80211_node *ni,
    int hdrlen;
 
    k = ieee80211_get_rxkey(ic, m, ni);
-   if (k == NULL)
+   if (k == NULL) {
+       mbuf_freem(m);
        return NULL;
+   }
 
    wh = mtod(m, struct ieee80211_frame *);
    hdrlen = ieee80211_get_hdrlen(wh);
@@ -200,15 +202,19 @@ ieee80211_input_hwdecrypt(struct ieee80211com *ic, struct ieee80211_node *ni,
             */
            break;
        }
-           if (ieee80211_ccmp_get_pn(&pn, &prsc, m, k) != 0)
+           if (ieee80211_ccmp_get_pn(&pn, &prsc, m, k) != 0) {
+               mbuf_freem(m);
                return NULL;
+           }
            if (rxi->rxi_flags & IEEE80211_RXI_HWDEC_SAME_PN) {
                if (pn < *prsc) {
                    ic->ic_stats.is_ccmp_replays++;
+                   mbuf_freem(m);
                    return NULL;
                }
            } else if (pn <= *prsc) {
                ic->ic_stats.is_ccmp_replays++;
+               mbuf_freem(m);
                return NULL;
            }
 
@@ -230,16 +236,20 @@ ieee80211_input_hwdecrypt(struct ieee80211com *ic, struct ieee80211_node *ni,
             */
            break;
        }
-       if (ieee80211_tkip_get_tsc(&pn, &prsc, m, k) != 0)
+       if (ieee80211_tkip_get_tsc(&pn, &prsc, m, k) != 0) {
+           mbuf_freem(m);
            return NULL;
+       }
 
        if (rxi->rxi_flags & IEEE80211_RXI_HWDEC_SAME_PN) {
            if (pn < *prsc) {
                ic->ic_stats.is_tkip_replays++;
+               mbuf_freem(m);
                return NULL;
                }
            } else if (pn <= *prsc) {
            ic->ic_stats.is_tkip_replays++;
+           mbuf_freem(m);
            return NULL;
        }
 
@@ -1800,10 +1810,12 @@ ieee80211_recv_probe_resp(struct ieee80211com *ic, mbuf_t m,
                 erp = frm[2];
                 break;
             case IEEE80211_ELEMID_VHT_CAP:
-                vhtcap = frm;
+                if (frm[1] >= 12)
+                    vhtcap = frm;
                 break;
             case IEEE80211_ELEMID_VHT_OPMODE:
-                vhtopmode = frm;
+                if (frm[1] >= 5)
+                    vhtopmode = frm;
                 break;
             case IEEE80211_ELEMID_RSN:
                 rsnie = frm;
@@ -2778,10 +2790,12 @@ ieee80211_recv_assoc_resp(struct ieee80211com *ic, mbuf_t m,
                 htop = frm;
                 break;
             case IEEE80211_ELEMID_VHT_CAP:
-                vhtcap = frm;
+                if (frm[1] >= 12)
+                    vhtcap = frm;
                 break;
             case IEEE80211_ELEMID_VHT_OPMODE:
-                vhtopmode = frm;
+                if (frm[1] >= 5)
+                    vhtopmode = frm;
                 break;
             case IEEE80211_ELEMID_VENDOR:
                 if (frm[1] < 4) {
@@ -3176,6 +3190,10 @@ ieee80211_recv_addba_req(struct ieee80211com *ic, mbuf_t m,
     ba->ba_winstart = ssn;
     ba->ba_winend = (ba->ba_winstart + ba->ba_winsize - 1) & 0xfff;
     /* allocate and setup our reordering buffer */
+    if (ba->ba_buf != NULL) {
+        free(ba->ba_buf);
+        ba->ba_buf = NULL;
+    }
     ba->ba_buf = (struct ieee80211_ba_buf*)malloc(IEEE80211_BA_MAX_WINSZ * sizeof(struct ieee80211_ba_buf), 0, 0);
     if (ba->ba_buf == NULL)
         goto refuse;
