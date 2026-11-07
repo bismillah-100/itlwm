@@ -406,7 +406,8 @@ ieee80211_add_ess(struct ieee80211com *ic, struct ieee80211_join *join)
     if (join->i_flags & IEEE80211_JOIN_WPA) {
         if (join->i_wpaparams.i_enabled) {
             if (!(ic->ic_caps & IEEE80211_C_RSN)) {
-                free(ess);
+                if (new_value)
+                    free(ess);
                 return ENODEV;
             }
             ieee80211_ess_setwpaparms(ess,
@@ -1344,9 +1345,9 @@ ieee80211_node_choose_bss(struct ieee80211com *ic, int bgscan,
              * during my scan.  So delete the entry for the AP
              * and retry to associate if there is another beacon.
              */
+            DPRINTF(("%s %s ni->ni_fails=%d\n", __FUNCTION__, ni->ni_essid, ni->ni_fails + 1));
             if (ni->ni_fails++ > 2)
                 ieee80211_free_node(ic, ni);
-            DPRINTF(("%s %s ni->ni_fails=%d\n", __FUNCTION__, ni->ni_essid, ni->ni_fails));
             continue;
         }
         
@@ -1723,6 +1724,11 @@ ieee80211_node_copy(struct ieee80211com *ic,
 {
     ieee80211_node_cleanup(ic, dst);
     *dst = *src;
+    memset(dst->ni_rx_ba, 0, sizeof(dst->ni_rx_ba));
+    memset(dst->ni_tx_ba, 0, sizeof(dst->ni_tx_ba));
+    dst->ni_unref_arg = NULL;
+    dst->ni_unref_arg_size = 0;
+    dst->ni_unref_cb = NULL;
     dst->ni_rsnie = NULL;
     if (src->ni_rsnie != NULL)
         ieee80211_save_ie(src->ni_rsnie, &dst->ni_rsnie);
