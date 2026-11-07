@@ -108,6 +108,8 @@ void AirportItlwmSkywalkInterface::associateSSID(uint8_t *ssid, uint32_t ssid_le
     bzero(&wpa, sizeof(wpa));
     bzero(&nwkey, sizeof(nwkey));
     
+    if (ssid_len > IEEE80211_NWID_LEN)
+        ssid_len = IEEE80211_NWID_LEN;
     memset(ic->ic_des_essid, 0, IEEE80211_NWID_LEN);
     memcpy(ic->ic_des_essid, ssid, ssid_len);
     ic->ic_des_esslen = ssid_len;
@@ -165,7 +167,7 @@ void AirportItlwmSkywalkInterface::associateSSID(uint8_t *ssid, uint32_t ssid_le
     }
     
     if (authtype_upper == APPLE80211_AUTHTYPE_NONE && authtype_lower == APPLE80211_AUTHTYPE_OPEN) { // Open or WEP Open System
-        if (key_len > 0) {
+        if (key_len > 0 && key_index >= 0 && key_index < IEEE80211_WEP_NKID) {
             XYLog("%s %d\n", __FUNCTION__, __LINE__);
             nwkey.i_wepon = IEEE80211_NWKEY_WEP;
             nwkey.i_defkid = key_index + 1;
@@ -223,7 +225,7 @@ void AirportItlwmSkywalkInterface::setGTK(const u_int8_t *gtk, size_t key_len, u
     struct ieee80211_key *k;
     int keylen;
     
-    if (gtk != NULL) {
+    if (gtk != NULL && kid < IEEE80211_WEP_NKID) {
         /* check that key length matches that of group cipher */
         keylen = ieee80211_cipher_keylen(ni->ni_rsngroupcipher);
         if (key_len != keylen) {
@@ -311,13 +313,8 @@ getSSID(struct apple80211_ssid_data *sd)
     if (ic->ic_state == IEEE80211_S_RUN) {
         memset(sd, 0, sizeof(*sd));
         sd->version = APPLE80211_VERSION;
-#ifdef AIRPORT_WCL
         sd->ssid_len = MIN(ic->ic_bss->ni_esslen, sizeof(sd->ssid_bytes));
         memcpy(sd->ssid_bytes, ic->ic_bss->ni_essid, sd->ssid_len);
-#else
-        memcpy(sd->ssid_bytes, ic->ic_des_essid, strlen((const char*)ic->ic_des_essid));
-        sd->ssid_len = (uint32_t)strlen((const char*)ic->ic_des_essid);
-#endif
         return kIOReturnSuccess;
     }
     return 6;

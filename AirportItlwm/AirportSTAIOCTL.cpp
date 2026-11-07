@@ -221,8 +221,8 @@ getSSID(OSObject *object,
     if (ic->ic_state == IEEE80211_S_RUN) {
         memset(sd, 0, sizeof(*sd));
         sd->version = APPLE80211_VERSION;
-        memcpy(sd->ssid_bytes, ic->ic_des_essid, strlen((const char*)ic->ic_des_essid));
-        sd->ssid_len = (uint32_t)strlen((const char*)ic->ic_des_essid);
+        sd->ssid_len = MIN(ic->ic_bss->ni_esslen, sizeof(sd->ssid_bytes));
+        memcpy(sd->ssid_bytes, ic->ic_bss->ni_essid, sd->ssid_len);
         return kIOReturnSuccess;
     }
     return 6;

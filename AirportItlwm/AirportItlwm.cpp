@@ -149,6 +149,8 @@ void AirportItlwm::associateSSID(uint8_t *ssid, uint32_t ssid_len, const struct 
     bzero(&wpa, sizeof(wpa));
     bzero(&nwkey, sizeof(nwkey));
     
+    if (ssid_len > IEEE80211_NWID_LEN)
+        ssid_len = IEEE80211_NWID_LEN;
     memset(ic->ic_des_essid, 0, IEEE80211_NWID_LEN);
     memcpy(ic->ic_des_essid, ssid, ssid_len);
     ic->ic_des_esslen = ssid_len;
@@ -204,7 +206,7 @@ void AirportItlwm::associateSSID(uint8_t *ssid, uint32_t ssid_len, const struct 
     }
     
     if (authtype_upper == APPLE80211_AUTHTYPE_NONE && authtype_lower == APPLE80211_AUTHTYPE_OPEN) { // Open or WEP Open System
-        if (key_len > 0) {
+        if (key_len > 0 && key_index >= 0 && key_index < IEEE80211_WEP_NKID) {
             XYLog("%s %d\n", __FUNCTION__, __LINE__);
             nwkey.i_wepon = IEEE80211_NWKEY_WEP;
             nwkey.i_defkid = key_index + 1;
@@ -262,7 +264,7 @@ void AirportItlwm::setGTK(const u_int8_t *gtk, size_t key_len, u_int8_t kid, u_i
     struct ieee80211_key *k;
     int keylen;
     
-    if (gtk != NULL) {
+    if (gtk != NULL && kid < IEEE80211_WEP_NKID) {
         /* check that key length matches that of group cipher */
         keylen = ieee80211_cipher_keylen(ni->ni_rsngroupcipher);
         if (key_len != keylen) {
@@ -705,18 +707,18 @@ UInt32 AirportItlwm::outputPacket(mbuf_t m, void *param)
     if (m == NULL) {
         XYLog("%s m==NULL!!\n", __FUNCTION__);
         ifp->netStat->outputErrors++;
-        ret = kIOReturnOutputDropped;
+        return kIOReturnOutputDropped;
     }
     if (!(mbuf_flags(m) & MBUF_PKTHDR) ){
         XYLog("%s pkthdr is NULL!!\n", __FUNCTION__);
         ifp->netStat->outputErrors++;
         freePacket(m);
-        ret = kIOReturnOutputDropped;
+        return kIOReturnOutputDropped;
     }
     if (mbuf_type(m) == MBUF_TYPE_FREE) {
         XYLog("%s mbuf is FREE!!\n", __FUNCTION__);
         ifp->netStat->outputErrors++;
-        ret = kIOReturnOutputDropped;
+        return kIOReturnOutputDropped;
     }
     if (!ifp->if_snd.queue->lockEnqueue(m)) {
         freePacket(m);
