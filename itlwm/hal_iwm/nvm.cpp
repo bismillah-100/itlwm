@@ -148,7 +148,6 @@ int ItlIwm::
 iwm_nvm_read_chunk(struct iwm_softc *sc, uint16_t section, uint16_t offset,
                    uint16_t length, uint8_t *data, uint16_t *len)
 {
-    offset = 0;
     struct iwm_nvm_access_cmd nvm_access_cmd = {
         .offset = htole16(offset),
         .length = htole16(length),
