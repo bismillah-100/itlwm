@@ -116,15 +116,11 @@ taskq_thread(void *xtq)
 
     IORecursiveLockLock(tq->tq_mtx);
     last = (--tq->tq_running == 0);
-    IORecursiveLockUnlock(tq->tq_mtx);
-
-//    if (ISSET(tq->tq_flags, TASKQ_MPSAFE))
-//        KERNEL_LOCK();
-
     if (last) {
         IOLog("itlwm: taskq %s schedule task wakeup\n", __FUNCTION__);
         IORecursiveLockWakeup(tq->tq_mtx, tq, false);
     }
+    IORecursiveLockUnlock(tq->tq_mtx);
 
 //    kthread_exit(0);
     thread_terminate(current_thread());
