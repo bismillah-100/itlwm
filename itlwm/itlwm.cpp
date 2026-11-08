@@ -597,7 +597,6 @@ IOReturn itlwm::outputStart(IONetworkInterface *interface, IOOptionBits options)
 UInt32 itlwm::outputPacket(mbuf_t m, void *param)
 {
 //    XYLog("%s\n", __FUNCTION__);
-    IOReturn ret = kIOReturnOutputSuccess;
     _ifnet *ifp = &fHalService->get80211Controller()->ic_ac.ac_if;
 
     if (fHalService->get80211Controller()->ic_state != IEEE80211_S_RUN || ifp->if_snd.queue == NULL) {
@@ -609,25 +608,25 @@ UInt32 itlwm::outputPacket(mbuf_t m, void *param)
     if (m == NULL) {
         XYLog("%s m==NULL!!\n", __FUNCTION__);
         ifp->netStat->outputErrors++;
-        ret = kIOReturnOutputDropped;
+        return kIOReturnOutputDropped;
     }
-    if (!(mbuf_flags(m) & MBUF_PKTHDR) ){
+    if (!(mbuf_flags(m) & MBUF_PKTHDR)) {
         XYLog("%s pkthdr is NULL!!\n", __FUNCTION__);
         ifp->netStat->outputErrors++;
         freePacket(m);
-        ret = kIOReturnOutputDropped;
+        return kIOReturnOutputDropped;
     }
     if (mbuf_type(m) == MBUF_TYPE_FREE) {
         XYLog("%s mbuf is FREE!!\n", __FUNCTION__);
         ifp->netStat->outputErrors++;
-        ret = kIOReturnOutputDropped;
+        return kIOReturnOutputDropped;
     }
     if (!ifp->if_snd.queue->lockEnqueue(m)) {
         freePacket(m);
-        ret = kIOReturnOutputDropped;
+        return kIOReturnOutputDropped;
     }
     (*ifp->if_start)(ifp);
-    return ret;
+    return kIOReturnOutputSuccess;
 }
 
 UInt32 itlwm::getFeatures() const
