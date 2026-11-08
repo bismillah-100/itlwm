@@ -43,11 +43,6 @@ detach(IOPCIDevice *device)
 #endif
     struct _ifnet *ifp = &com.sc_ic.ic_ac.ac_if;
     struct iwm_softc *sc = &com;
-#ifdef AIRPORT_VTD
-    releaseAll();
-    taskq_destroy(systq);
-    taskq_destroy(com.sc_nswq);
-#endif
     
     for (int txq_i = 0; txq_i < nitems(sc->txq); txq_i++)
         iwm_free_tx_ring(sc, &sc->txq[txq_i]);
@@ -57,14 +52,10 @@ detach(IOPCIDevice *device)
     iwm_dma_contig_free(&sc->kw_dma);
     iwm_dma_contig_free(&sc->sched_dma);
     iwm_dma_contig_free(&sc->fw_dma);
-#ifdef AIRPORT_VTD
     iwm_free_fw_paging(sc);
-#endif
     ieee80211_ifdetach(ifp);
-#ifndef AIRPORT_VTD
     taskq_destroy(systq);
     taskq_destroy(com.sc_nswq);
-#endif
     releaseAll();
 }
 
@@ -80,7 +71,6 @@ attach(IOPCIDevice *device)
 #endif
     if (!iwm_attach(&com, &pci)) {
         detach(device);
-        releaseAll();
         return false;
     }
     return true;

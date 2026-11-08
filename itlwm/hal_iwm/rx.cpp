@@ -383,7 +383,8 @@ iwm_rx_mpdu(struct iwm_softc *sc, mbuf_t m, void *pktdata,
         mbuf_freem(m);
         return;
     }
-    if (len > maxlen - sizeof(*rx_res)) {
+    if (maxlen < sizeof(*rx_res) + sizeof(uint32_t) ||
+        len > maxlen - sizeof(*rx_res) - sizeof(uint32_t)) {
         IC2IFP(ic)->netStat->inputErrors++;
         mbuf_freem(m);
         return;

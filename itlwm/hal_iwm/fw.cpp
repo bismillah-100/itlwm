@@ -456,6 +456,7 @@ iwm_read_firmware(struct iwm_softc *sc, enum iwm_ucode_type ucode_type)
                 capa = (struct iwm_ucode_capa *)tlv_data;
                 idx = le32toh(capa->api_index);
                 if (idx >= howmany(IWM_NUM_UCODE_TLV_CAPA, 32)) {
+                    err = EINVAL;
                     goto parse_out;
                 }
                 for (i = 0; i < 32; i++) {

@@ -488,8 +488,8 @@ iwm_send_cmd(struct iwm_softc *sc, struct iwm_host_cmd *hcmd)
             }, this, sc, hcmd);
     }
     uint64_t epoch = dmaEpoch;
-    bool submitted = false;
 #endif
+    bool submitted = false;
     struct iwm_tx_ring *ring = &sc->txq[sc->cmdqid];
     struct iwm_tfd *desc;
     struct iwm_tx_data *txdata;
@@ -666,8 +666,8 @@ iwm_send_cmd(struct iwm_softc *sc, struct iwm_host_cmd *hcmd)
 #ifdef AIRPORT_VTD
     txdata->commandPending = true;
     txdata->commandWaiting = !async;
-    submitted = true;
 #endif
+    submitted = true;
     ring->queued++;
     ring->cur = (ring->cur + 1) % IWM_TX_RING_COUNT;
     IWM_WRITE(sc, IWM_HBUS_TARG_WRPTR, ring->qid << 8 | ring->cur);
@@ -684,8 +684,10 @@ iwm_send_cmd(struct iwm_softc *sc, struct iwm_host_cmd *hcmd)
                 break;
             }
         }
-        if (epoch != dmaEpoch || generation != sc->sc_generation)
-            return ENXIO;
+        if (epoch != dmaEpoch || generation != sc->sc_generation) {
+            err = ENXIO;
+            goto out;
+        }
         txdata->commandWaiting = false;
         if (!err) {
             hcmd->resp_pkt = reinterpret_cast<iwm_rx_packet *>(sc->sc_cmd_resp_pkt[idx]);
@@ -712,7 +714,6 @@ iwm_send_cmd(struct iwm_softc *sc, struct iwm_host_cmd *hcmd)
     }
 #endif
 out:
-#ifdef AIRPORT_VTD
     if (err) {
         if (!submitted && txdata->m) {
             mbuf_freem(txdata->m);
@@ -722,7 +723,6 @@ out:
         sc->sc_cmd_resp_pkt[idx] = nullptr;
         sc->sc_cmd_resp_len[idx] = 0;
     }
-#endif
     splx(s);
     
     return err;

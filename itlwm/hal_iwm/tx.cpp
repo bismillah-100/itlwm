@@ -148,6 +148,11 @@ iwm_free_tx_ring(iwm_softc *sc, struct iwm_tx_ring *ring)
             data->map = NULL;
         }
     }
+    ring->desc = NULL;
+    ring->cmd = NULL;
+    ring->queued = 0;
+    ring->cur = 0;
+    ring->tail = 0;
 }
 
 void ItlIwm::
@@ -687,8 +692,12 @@ iwm_alloc_fw_paging_mem(struct iwm_softc *sc, const struct iwm_fw_sects *image)
 #endif
     
     num_of_pages = image->paging_mem_size / IWM_FW_PAGING_SIZE;
+    if (num_of_pages <= 0)
+        return EINVAL;
     sc->num_of_paging_blk =
         ((num_of_pages - 1) / IWM_NUM_OF_PAGE_PER_GROUP) + 1;
+    if (sc->num_of_paging_blk + 1 > IWM_NUM_OF_FW_PAGING_BLOCKS)
+        return EINVAL;
 
     sc->num_of_pages_in_last_blk =
         num_of_pages -
