@@ -189,8 +189,10 @@ void AirportItlwm::associateSSID(uint8_t *ssid, uint32_t ssid_len, const struct 
         XYLog("%s %d\n", __FUNCTION__, __LINE__);
         wpa.i_akms |= IEEE80211_WPA_AKM_PSK | IEEE80211_WPA_AKM_SHA256_PSK;
         wpa.i_enabled = 1;
-        memcpy(ic->ic_psk, key, sizeof(ic->ic_psk));
-        ic->ic_flags |= IEEE80211_F_PSK;
+        if (key != NULL && key_len >= sizeof(ic->ic_psk)) {
+            memcpy(ic->ic_psk, key, sizeof(ic->ic_psk));
+            ic->ic_flags |= IEEE80211_F_PSK;
+        }
         ieee80211_ioctl_setwpaparms(ic, &wpa);
     }
     if (authtype_upper & (APPLE80211_AUTHTYPE_WPA | APPLE80211_AUTHTYPE_WPA2 | APPLE80211_AUTHTYPE_SHA256_8021X)) {
@@ -325,7 +327,6 @@ createMediumTables(const IONetworkMedium **primary)
     
     medium = IONetworkMedium::medium(0x80, 11000000);
     IONetworkMedium::addMedium(mediumDict, medium);
-    medium->release();
     if (primary) {
         *primary = medium;
     }
@@ -334,6 +335,7 @@ createMediumTables(const IONetworkMedium **primary)
     if (!result)
         XYLog("Cannot publish medium dictionary!\n");
 
+    medium->release();
     mediumDict->release();
     return result;
 }
@@ -919,6 +921,7 @@ void AirportItlwm::setPowerStateOn()
 {
     XYLog("%s\n", __FUNCTION__);
     pmPowerState = kPowerStateOn;
+    enableAdapter(fNetIf);
     pmPolicyMaker->acknowledgeSetPowerState();
 }
 

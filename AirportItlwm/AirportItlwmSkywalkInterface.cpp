@@ -150,8 +150,10 @@ void AirportItlwmSkywalkInterface::associateSSID(uint8_t *ssid, uint32_t ssid_le
         XYLog("%s %d\n", __FUNCTION__, __LINE__);
         wpa.i_akms |= IEEE80211_WPA_AKM_PSK | IEEE80211_WPA_AKM_SHA256_PSK;
         wpa.i_enabled = 1;
-        memcpy(ic->ic_psk, key, sizeof(ic->ic_psk));
-        ic->ic_flags |= IEEE80211_F_PSK;
+        if (key != NULL && key_len >= sizeof(ic->ic_psk)) {
+            memcpy(ic->ic_psk, key, sizeof(ic->ic_psk));
+            ic->ic_flags |= IEEE80211_F_PSK;
+        }
         ieee80211_ioctl_setwpaparms(ic, &wpa);
     }
     if (authtype_upper & (APPLE80211_AUTHTYPE_WPA | APPLE80211_AUTHTYPE_WPA2 | APPLE80211_AUTHTYPE_SHA256_8021X)) {
@@ -787,13 +789,20 @@ setASSOCIATE(struct apple80211_assoc_data *ad)
 
     if (ad->ad_mode != APPLE80211_AP_MODE_IBSS) {
         disassocIsVoluntary = false;
+        bzero(&auth_type_data, sizeof(auth_type_data));
         auth_type_data.version = APPLE80211_VERSION;
         auth_type_data.authtype_upper = ad->ad_auth_upper;
         auth_type_data.authtype_lower = ad->ad_auth_lower;
         setAUTH_TYPE(&auth_type_data);
+        bzero(&rsn_ie_data, sizeof(rsn_ie_data));
         rsn_ie_data.version = APPLE80211_VERSION;
-        rsn_ie_data.len = ad->ad_rsn_ie[1] + 2;
-        memcpy(rsn_ie_data.ie, ad->ad_rsn_ie, rsn_ie_data.len);
+        if (ad->ad_rsn_ie_len > 0) {
+            uint32_t rsn_len = ad->ad_rsn_ie[1] + 2;
+            if (rsn_len > sizeof(rsn_ie_data.ie))
+                rsn_len = sizeof(rsn_ie_data.ie);
+            rsn_ie_data.len = rsn_len;
+            memcpy(rsn_ie_data.ie, ad->ad_rsn_ie, rsn_ie_data.len);
+        }
         setRSN_IE(&rsn_ie_data);
 
         associateSSID(ad->ad_ssid, ad->ad_ssid_len, ad->ad_bssid, ad->ad_auth_lower, ad->ad_auth_upper, ad->ad_key.key, ad->ad_key.key_len, ad->ad_key.key_index);
@@ -994,9 +1003,9 @@ static int convertNodeToScanResult(ItlHalService *fHalService, struct ieee80211_
         result->asr_ie_len = 0;
     }
     result->asr_beacon_int = fNextNodeToSend->ni_intval;
-    for (int i = 0; i < result->asr_nrates; i++ )
-        result->asr_rates[i] = fNextNodeToSend->ni_rates.rs_rates[i];
     result->asr_nrates = fNextNodeToSend->ni_rates.rs_nrates;
+    for (int i = 0; i < result->asr_nrates && i < nitems(result->asr_rates); i++)
+        result->asr_rates[i] = fNextNodeToSend->ni_rates.rs_rates[i];
     result->asr_age = (uint32_t)(airport_up_time() - fNextNodeToSend->ni_age_ts);
     result->asr_cap = fNextNodeToSend->ni_capinfo;
     result->asr_channel.version = APPLE80211_VERSION;

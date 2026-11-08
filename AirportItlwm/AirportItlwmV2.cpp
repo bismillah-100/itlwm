@@ -613,19 +613,19 @@ bool AirportItlwm::createMediumTables(const IONetworkMedium **primary)
 
     medium = IONetworkMedium::medium(kIOMediumIEEE80211, 54000000);
     IONetworkMedium::addMedium(mediumDict, medium);
-    medium->release();
     if (primary) {
         *primary = medium;
     }
-    medium = IONetworkMedium::medium(kIOMediumIEEE80211None, 0);
-    IONetworkMedium::addMedium(mediumDict, medium);
-    medium->release();
+    auto noneMedium = IONetworkMedium::medium(kIOMediumIEEE80211None, 0);
+    IONetworkMedium::addMedium(mediumDict, noneMedium);
+    noneMedium->release();
 
     bool result = publishMediumDictionary(mediumDict);
     if (!result) {
         XYLog("Cannot publish medium dictionary!\n");
     }
 
+    medium->release();
     mediumDict->release();
     return result;
 }
@@ -1390,5 +1390,6 @@ void AirportItlwm::setPowerStateOn()
 {
     XYLog("%s\n", __FUNCTION__);
     pmPowerState = kPowerStateOn;
+    enableAdapter(bsdInterface);
     pmPolicyMaker->acknowledgeSetPowerState();
 }

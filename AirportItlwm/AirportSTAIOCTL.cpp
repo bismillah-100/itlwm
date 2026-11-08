@@ -501,8 +501,10 @@ getRATE(OSObject *object, struct apple80211_rate_data *rd)
                     break;
             }
             index += 2 * (nss - 1);
+            if (index >= IEEE80211_VHT_NUM_RATESETS)
+                index = IEEE80211_VHT_NUM_RATESETS - 1;
             const struct ieee80211_vht_rateset *rs = &ieee80211_std_ratesets_11ac[index];
-            rd->rate[0] = rs->rates[ic->ic_bss->ni_txmcs % rs->nrates] / 2;
+            rd->rate[0] = rs->nrates > 0 ? (rs->rates[ic->ic_bss->ni_txmcs % rs->nrates] / 2) : 0;
         } else if (ic->ic_curmode == IEEE80211_MODE_11N) {
             int is_40mhz = ic->ic_bss->ni_chw == IEEE80211_CHAN_WIDTH_40;
             if (sgi)
@@ -512,9 +514,15 @@ getRATE(OSObject *object, struct apple80211_rate_data *rd)
             index += (ic->ic_bss->ni_txmcs / 16);
             nss = ic->ic_bss->ni_txmcs / 8 + 1;
             index += 2 * (nss - 1);
+            if (index >= IEEE80211_HT_NUM_RATESETS)
+                index = IEEE80211_HT_NUM_RATESETS - 1;
             rd->rate[0] = ieee80211_std_ratesets_11n[index].rates[ic->ic_bss->ni_txmcs % 8] / 2;
-        } else
-            rd->rate[0] = ic->ic_bss->ni_rates.rs_rates[ic->ic_bss->ni_txrate];
+        } else {
+            if (ic->ic_bss->ni_txrate < nitems(ic->ic_bss->ni_rates.rs_rates))
+                rd->rate[0] = ic->ic_bss->ni_rates.rs_rates[ic->ic_bss->ni_txrate];
+            else
+                rd->rate[0] = 0;
+        }
         return kIOReturnSuccess;
     }
     return 6;
@@ -801,10 +809,9 @@ getRATE_SET(OSObject *object, struct apple80211_rate_set_data *ad)
         ad->num_rates = ic->ic_bss->ni_rates.rs_nrates;
         size_t size = min(ic->ic_bss->ni_rates.rs_nrates, ARRAY_SIZE(ad->rates));
         for (int i=0; i < size; i++) {
-            struct apple80211_rate apple_rate = ad->rates[i];
-            apple_rate.version = APPLE80211_VERSION;
-            apple_rate.rate = ic->ic_bss->ni_rates.rs_rates[i];
-            apple_rate.flags = 0;
+            ad->rates[i].version = APPLE80211_VERSION;
+            ad->rates[i].rate = ic->ic_bss->ni_rates.rs_rates[i];
+            ad->rates[i].flags = 0;
         }
         return kIOReturnSuccess;
     }
@@ -1049,13 +1056,20 @@ setASSOCIATE(OSObject *object,
 
     if (ad->ad_mode != APPLE80211_AP_MODE_IBSS) {
         disassocIsVoluntary = false;
+        bzero(&auth_type_data, sizeof(auth_type_data));
         auth_type_data.version = APPLE80211_VERSION;
         auth_type_data.authtype_upper = ad->ad_auth_upper;
         auth_type_data.authtype_lower = ad->ad_auth_lower;
         setAUTH_TYPE(object, &auth_type_data);
+        bzero(&rsn_ie_data, sizeof(rsn_ie_data));
         rsn_ie_data.version = APPLE80211_VERSION;
-        rsn_ie_data.len = ad->ad_rsn_ie[1] + 2;
-        memcpy(rsn_ie_data.ie, ad->ad_rsn_ie, rsn_ie_data.len);
+        if (ad->ad_rsn_ie_len > 0) {
+            uint32_t rsn_len = ad->ad_rsn_ie[1] + 2;
+            if (rsn_len > sizeof(rsn_ie_data.ie))
+                rsn_len = sizeof(rsn_ie_data.ie);
+            rsn_ie_data.len = rsn_len;
+            memcpy(rsn_ie_data.ie, ad->ad_rsn_ie, rsn_ie_data.len);
+        }
         setRSN_IE(object, &rsn_ie_data);
 
         associateSSID(ad->ad_ssid, ad->ad_ssid_len, ad->ad_bssid, ad->ad_auth_lower, ad->ad_auth_upper, ad->ad_key.key, ad->ad_key.key_len, ad->ad_key.key_index);
@@ -1433,9 +1447,9 @@ getSCAN_RESULT(OSObject *object, struct apple80211_scan_result **sr)
 #endif
     }
     result->asr_beacon_int = fNextNodeToSend->ni_intval;
-    for (int i = 0; i < result->asr_nrates; i++ )
-        result->asr_rates[i] = fNextNodeToSend->ni_rates.rs_rates[i];
     result->asr_nrates = fNextNodeToSend->ni_rates.rs_nrates;
+    for (int i = 0; i < result->asr_nrates && i < nitems(result->asr_rates); i++)
+        result->asr_rates[i] = fNextNodeToSend->ni_rates.rs_rates[i];
     result->asr_age = (uint32_t)(airport_up_time() - fNextNodeToSend->ni_age_ts);
     result->asr_cap = fNextNodeToSend->ni_capinfo;
     result->asr_channel.version = APPLE80211_VERSION;
