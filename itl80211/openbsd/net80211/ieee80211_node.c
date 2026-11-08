@@ -68,6 +68,7 @@
 
 #include <net80211/ieee80211_var.h>
 #include <net80211/ieee80211_priv.h>
+#include <net80211/ieee80211_proto.h>
 
 struct ieee80211_node *ieee80211_node_alloc(struct ieee80211com *);
 void ieee80211_node_free(struct ieee80211com *, struct ieee80211_node *);
@@ -1777,7 +1778,7 @@ ieee80211_node_set_timeouts(struct ieee80211_node *ni)
 {
     int i;
     
-    memset(ni->ni_addba_req_to, 0, sizeof(ni->ni_addba_req_to) * nitems(ni->ni_addba_req_to));
+    memset(ni->ni_addba_req_to, 0, sizeof(ni->ni_addba_req_to));
 #ifndef IEEE80211_STA_ONLY
     timeout_set(&ni->ni_eapol_to, ieee80211_eapol_timeout, ni);
     timeout_set(&ni->ni_sa_query_to, ieee80211_sa_query_timeout, ni);
@@ -2918,9 +2919,10 @@ ieee80211_setup_rates(struct ieee80211com *ic, struct ieee80211_node *ni,
 void
 ieee80211_node_trigger_addba_req(struct ieee80211_node *ni, int tid)
 {
+    int ac = ieee80211_up_to_ac(ni->ni_ic, tid);
     if (ni->ni_tx_ba[tid].ba_state == IEEE80211_BA_INIT &&
-        !timeout_pending(&ni->ni_addba_req_to[tid])) {
-        timeout_add_sec(&ni->ni_addba_req_to[tid],
+        !timeout_pending(&ni->ni_addba_req_to[ac])) {
+        timeout_add_sec(&ni->ni_addba_req_to[ac],
                         ni->ni_addba_req_intval[tid]);
     }
 }
