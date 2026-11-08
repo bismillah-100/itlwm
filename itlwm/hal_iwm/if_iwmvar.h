@@ -546,6 +546,7 @@ struct iwm_softc {
 	pcitag_t sc_pcitag;
 	IOInterruptEventSource *sc_ih;
     int sc_msix;
+    int sc_attached;
 
 	/* TX scheduler rings. */
 	struct iwm_dma_info		sched_dma;

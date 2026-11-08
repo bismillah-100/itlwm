@@ -1287,7 +1287,7 @@ iwm_ampdu_tx_done(struct iwm_softc *sc, struct iwm_cmd_header *cmd_hdr,
     struct ieee80211com *ic = &sc->sc_ic;
     int tid = cmd_hdr->qid - IWM_FIRST_AGG_TX_QUEUE;
     struct iwm_tx_data *txdata = &txq->data[cmd_hdr->idx];
-    struct ieee80211_node *ni = &in->in_ni;
+    struct ieee80211_node *ni = in ? &in->in_ni : NULL;
     int txfail = (status != IWM_TX_STATUS_SUCCESS &&
                   status != IWM_TX_STATUS_DIRECT_DONE);
     struct ieee80211_tx_ba *ba;
@@ -1572,6 +1572,8 @@ iwm_rx_tx_cmd(struct iwm_softc *sc, struct iwm_rx_packet *pkt,
 
     ssn = iwm_get_scd_ssn(tx_resp);
     struct iwm_node *in = txd->in;
+    if (in != NULL)
+        ieee80211_ref_node(&in->in_ni);
     iwm_rx_tx_cmd_single(sc, tx_resp, qid, IWM_AGG_SSN_TO_TXQ_IDX(ssn));
     if (qid >= IWM_FIRST_AGG_TX_QUEUE) {
         int status;
@@ -1581,6 +1583,8 @@ iwm_rx_tx_cmd(struct iwm_softc *sc, struct iwm_rx_packet *pkt,
                           le32toh(tx_resp->initial_rate), tx_resp->frame_count,
                           tx_resp->failure_frame, ssn, status, iwl_mvm_get_agg_status(sc, tx_resp));
     }
+    if (in != NULL)
+        ieee80211_release_node(&sc->sc_ic, &in->in_ni);
 
     iwm_clear_oactive(sc, ring);
 }
@@ -1811,13 +1815,15 @@ iwm_tx(struct iwm_softc *sc, mbuf_t m, struct ieee80211_node *ni, int ac)
         if (ic->ic_curmode != IEEE80211_MODE_11N)
             chan_flags &= ~IEEE80211_CHAN_HT;
         tap->wt_chan_flags = htole16(chan_flags);
-        if ((ni->ni_flags & IEEE80211_NODE_HT) &&
+        if (rinfo != NULL && (ni->ni_flags & IEEE80211_NODE_HT) &&
             !IEEE80211_IS_MULTICAST(wh->i_addr1) &&
             type == IEEE80211_FC0_TYPE_DATA &&
             rinfo->ht_plcp != IWM_RATE_HT_SISO_MCS_INV_PLCP) {
             tap->wt_rate = (0x80 | rinfo->ht_plcp);
-        } else
+        } else if (rinfo != NULL)
             tap->wt_rate = rinfo->rate;
+        else
+            tap->wt_rate = 0;
         if ((ic->ic_flags & IEEE80211_F_WEPON) &&
             (wh->i_fc[1] & IEEE80211_FC1_PROTECTED))
             tap->wt_flags |= IEEE80211_RADIOTAP_F_WEP;
@@ -3427,7 +3433,7 @@ iwm_init_hw(struct iwm_softc *sc)
     err = iwm_load_ucode_wait_alive(sc, IWM_UCODE_TYPE_REGULAR);
     if (err) {
         XYLog("%s: could not load firmware\n", DEVNAME(sc));
-        goto err;
+        return err;
     }
     
     if (!iwm_nic_lock(sc))
@@ -3458,20 +3464,20 @@ iwm_init_hw(struct iwm_softc *sc)
     if (err) {
         XYLog("%s: could not init bt coex (error %d)\n",
               DEVNAME(sc), err);
-        return err;
+        goto err;
     }
     
     if (isset(sc->sc_enabled_capa,
               IWM_UCODE_TLV_CAPA_SOC_LATENCY_SUPPORT)) {
         err = iwm_send_soc_conf(sc);
         if (err)
-            return err;
+            goto err;
     }
     
     if (isset(sc->sc_enabled_capa, IWM_UCODE_TLV_CAPA_DQA_SUPPORT)) {
         err = iwm_send_dqa_cmd(sc);
         if (err)
-            return err;
+            goto err;
     }
     
     /* Add auxiliary station for scanning */
@@ -4545,7 +4551,6 @@ iwm_preinit(struct iwm_softc *sc)
     struct ieee80211com *ic = &sc->sc_ic;
     struct _ifnet *ifp = IC2IFP(ic);
     int err;
-    static int attached;
     
     err = iwm_prepare_card_hw(sc);
     if (err) {
@@ -4553,7 +4558,7 @@ iwm_preinit(struct iwm_softc *sc)
         return err;
     }
     
-    if (attached) {
+    if (sc->sc_attached) {
         /* Update MAC in case the upper layers changed it. */
         IEEE80211_ADDR_COPY(sc->sc_ic.ic_myaddr,
                             ((struct arpcom *)ifp)->ac_enaddr);
@@ -4572,7 +4577,7 @@ iwm_preinit(struct iwm_softc *sc)
         return err;
     
     /* Print version info and MAC address on first successful fw load. */
-    attached = 1;
+    sc->sc_attached = 1;
     XYLog("%s: hw rev 0x%x, fw ver %s, address %s\n",
           DEVNAME(sc), sc->sc_hw_rev & IWM_CSR_HW_REV_TYPE_MSK,
           sc->sc_fwver, ether_sprintf(sc->sc_nvm.hw_addr));
