@@ -1708,7 +1708,11 @@ ieee80211_node_cleanup(struct ieee80211com *ic, struct ieee80211_node *ni)
     }
     
 #ifndef IEEE80211_STA_ONLY
-    mq_purge(&ni->ni_savedq);
+    timeout_del(&ni->ni_eapol_to);
+    timeout_free(&ni->ni_eapol_to);
+    timeout_del(&ni->ni_sa_query_to);
+    timeout_free(&ni->ni_sa_query_to);
+    mq_destroy(&ni->ni_savedq);
 #endif
 }
 

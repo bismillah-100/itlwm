@@ -1632,8 +1632,10 @@ ieee80211_save_ie(const u_int8_t *frm, u_int8_t **ie)
     int len = 2 + frm[1];
     
     if (*ie == NULL || olen != len) {
-        if (*ie != NULL)
+        if (*ie != NULL) {
             free(*ie);
+            *ie = NULL;
+        }
         *ie = (u_int8_t *)malloc(len, 0, 0);
         if (*ie == NULL)
             return ENOMEM;
@@ -1651,8 +1653,11 @@ ieee80211_save_ie_tlv(const u_int8_t *frm, u_int8_t **ie, uint32_t *accept_len, 
     int olen = *accept_len;
     
     if (*ie == NULL || olen != len) {
-        if (*ie != NULL && *accept_len > 0)
+        if (*ie != NULL && *accept_len > 0) {
             free(*ie);
+            *ie = NULL;
+            *accept_len = 0;
+        }
         *ie = (u_int8_t *)malloc(len, 1, 1);
         if (*ie == NULL)
             return ENOMEM;
@@ -2091,7 +2096,7 @@ ieee80211_recv_probe_resp(struct ieee80211com *ic, mbuf_t m,
 #ifdef AIRPORT_WCL
         uint32_t tlv_len = (mtod(m, u_int8_t *) + mbuf_len(m)) - (u_int8_t *)&wh[1] - 8 - 2 - 2;
 #else
-        uint32_t tlv_len = (mtod(m, u_int8_t *) + mbuf_len(m)) - (u_int8_t *)&wh[1] + 1 - 8 - 2 - 2;
+        uint32_t tlv_len = (mtod(m, u_int8_t *) + mbuf_len(m)) - (u_int8_t *)&wh[1] - 8 - 2 - 2;
 #endif
         ieee80211_save_ie_tlv(((u_int8_t *)&wh[1]) + 8 + 2 + 2, &ni->ni_rsnie_tlv, &ni->ni_rsnie_tlv_len, tlv_len);
         ni->ni_rsnprotos = IEEE80211_PROTO_NONE;

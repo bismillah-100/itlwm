@@ -105,6 +105,15 @@ IOReturn CTimeout::timeout_set(OSObject *target, void *arg0, void *arg1, void *a
     }
     if ((*cto) == NULL) {
         *cto = new CTimeout;
+        if (*cto == NULL) {
+            return kIOReturnNoMemory;
+        }
+        if (!(*cto)->init()) {
+            (*cto)->release();
+            *cto = NULL;
+            return kIOReturnError;
+        }
+        (*cto)->tm = NULL;
     }
     tm = *cto;
     tm->isPending = false;

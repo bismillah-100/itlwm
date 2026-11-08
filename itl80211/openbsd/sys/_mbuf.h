@@ -299,6 +299,16 @@ mq_purge(struct mbuf_queue *mq)
     return (ml_purge(&ml));
 }
 
+static inline void
+mq_destroy(struct mbuf_queue *mq)
+{
+    mq_purge(mq);
+    if (mq->mq_mtx) {
+        IORecursiveLockFree(mq->mq_mtx);
+        mq->mq_mtx = NULL;
+    }
+}
+
 /*
  * Concatenate mbuf chain n to m.
  * n might be copied into m (when n->m_len is small), therefore data portion of
@@ -398,8 +408,10 @@ m_dup_pkthdr(mbuf_t to, mbuf_t from, int wait)
 static inline mbuf_t
 m_dup_pkt(mbuf_t m0, unsigned int adj, int wait)
 {
-    mbuf_t m;
-    mbuf_dup(m0, wait, &m);
+    mbuf_t m = NULL;
+    if (mbuf_dup(m0, (mbuf_how_t)wait, &m) != 0) {
+        return NULL;
+    }
     return m;
 //    mbuf_t m;
 //    int len;

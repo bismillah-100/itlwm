@@ -29,6 +29,17 @@ struct ItlDmaBuffer {
 
 class ItlDmaArena {
 public:
+    ItlDmaArena() :
+        blocks{},
+        lock(nullptr),
+        device(nullptr),
+        owner(nullptr),
+        mapper(nullptr),
+        usedPages(0),
+        highWaterPages(0),
+        failures(0),
+        opened(false),
+        recyclingDeferred(false) {}
     static ItlDmaArena *create(IOPCIDevice *device, IOService *owner, uint8_t bits);
     bool allocate(uint32_t size, uint32_t alignment, ItlDmaBuffer &buffer);
     void deallocate(ItlDmaBuffer &buffer);
