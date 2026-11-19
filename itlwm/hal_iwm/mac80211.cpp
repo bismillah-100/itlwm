@@ -3132,6 +3132,13 @@ iwm_newstate_task(void *psc)
                 ic->ic_join_now = false;
                 if (sc->sc_flags & (IWM_FLAG_SCANNING | IWM_FLAG_BGSCAN))
                     that->iwm_scan_abort(sc);
+#ifdef AIRPORT_WCL
+                if ((sc->sc_flags & IWM_FLAG_SHUTDOWN) ||
+                    generation != sc->sc_generation) {
+                    splx(s);
+                    return;
+                }
+#endif
                 sc->sc_flags &= ~(IWM_FLAG_SCANNING | IWM_FLAG_BGSCAN);
                 ieee80211_end_scan(&ic->ic_if);
                 splx(s);
@@ -3158,6 +3165,13 @@ iwm_newstate_task(void *psc)
             case IEEE80211_S_RUN:
                 if (sc->sc_flags & IWM_FLAG_BGSCAN) {
                     that->iwm_scan_abort(sc);
+#ifdef AIRPORT_WCL
+                    if ((sc->sc_flags & IWM_FLAG_SHUTDOWN) ||
+                        generation != sc->sc_generation) {
+                        splx(s);
+                        return;
+                    }
+#endif
                     sc->sc_flags &= ~IWM_FLAG_BGSCAN;
                 }
                 err = that->iwm_run_stop(sc);
@@ -3533,14 +3547,23 @@ iwm_init_hw(struct iwm_softc *sc)
     }
     
     /* Initialize tx backoffs to the minimum. */
-    if (sc->sc_device_family == IWM_DEVICE_FAMILY_7000)
+    if (sc->sc_device_family == IWM_DEVICE_FAMILY_7000) {
         iwm_tt_tx_backoff(sc, 0);
+#ifdef AIRPORT_WCL
+        if (generation != sc->sc_generation) {
+            err = ENXIO;
+            goto err;
+        }
+#endif
+    }
     
     
     err = iwm_config_ltr(sc);
 #ifdef AIRPORT_WCL
-    if (err == ENXIO)
+    if (err == ENXIO || generation != sc->sc_generation) {
+        err = ENXIO;
         goto err;
+    }
 #endif
     if (err) {
         XYLog("%s: PCIe LTR configuration failed (error %d)\n",
